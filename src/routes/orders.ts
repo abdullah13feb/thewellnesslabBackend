@@ -278,7 +278,8 @@ router.post("/verify-payment", async (req: Request, res: Response) => {
             paymentStatus: 'paid',
             status: 'PROCESSING',
             stripePaymentId: session.payment_intent as string
-          }
+          },
+          include: { items: { include: { product: true } } }
         });
         // Send Confirmation Email for Online Payment Success
         try {
