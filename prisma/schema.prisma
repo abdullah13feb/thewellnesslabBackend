@@ -57,15 +57,15 @@ model Product {
 model Blog {
   id        String   @id @default(cuid())
   title     String
-  slug      String   @unique
-  category  String
-  author    String
-  excerpt   String
-  content   String
+  slug      String?
+  category  String   @default("Uncategorized")
+  author    String   @default("Admin")
+  excerpt   String   @default("")
+  content   String   @default("")
   image     String?
   readTime  String?
   featured  Boolean  @default(false)
-  authorId  String   // Clerk ID of the creator
+  authorId  String?   // Clerk ID of the creator
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
