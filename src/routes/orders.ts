@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 import { sendOrderConfirmationEmail } from "../lib/email.js";
 import Stripe from "stripe";
 
@@ -12,8 +12,21 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
 const router = Router();
 
 // GET all orders (Admin sees all, User sees own)
-router.get("/", requireAuth, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.get("/", requireAuthOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
+    if (req.apiKey) {
+      const orders = await prisma.order.findMany({
+        include: { items: { include: { product: true } } },
+        orderBy: { createdAt: "desc" },
+      });
+
+      return res.json({
+        success: true,
+        data: orders,
+        message: `Total orders: ${orders.length}`,
+      });
+    }
+
     const userId = req.auth.userId!;
 
     // Check if admin
@@ -49,8 +62,8 @@ router.get("/", requireAuth, async (req: Request, res: Response<ApiResponse<any>
 // GET order statistics (Admin only)
 router.get(
   "/stats/summary",
-  requireAuth,
-  requireAdmin,
+  requireAuthOrApiKey,
+  requireAdminOrApiKey,
   async (req: Request, res: Response<ApiResponse<any>>) => {
     try {
       const totalOrders = await prisma.order.count();
@@ -163,7 +176,7 @@ router.get(
 );
 
 // GET single order
-router.get("/:orderId", requireAuth, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.get("/:orderId", requireAuthOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
     const order = await prisma.order.findUnique({
       where: { id: req.params.orderId },
@@ -172,6 +185,10 @@ router.get("/:orderId", requireAuth, async (req: Request, res: Response<ApiRespo
 
     if (!order) {
       return res.status(404).json({ success: false, error: "Order not found" });
+    }
+
+    if (req.apiKey) {
+      return res.json({ success: true, data: order });
     }
 
     // Check ownership or admin
@@ -486,7 +503,7 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
 });
 
 // UPDATE order status (Admin only)
-router.put("/:orderId", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.put("/:orderId", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
     const { status } = req.body;
 
@@ -513,8 +530,8 @@ router.put("/:orderId", requireAuth, requireAdmin, async (req: Request, res: Res
 // DELETE order (Admin only)
 router.delete(
   "/:orderId",
-  requireAuth,
-  requireAdmin,
+  requireAuthOrApiKey,
+  requireAdminOrApiKey,
   async (req: Request, res: Response<ApiResponse<null>>) => {
     try {
       await prisma.order.delete({

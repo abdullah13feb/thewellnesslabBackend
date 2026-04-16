@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -43,7 +43,7 @@ router.get("/:idOrSlug", async (req: Request, res: Response<ApiResponse<any>>) =
 });
 
 // CREATE product
-router.post("/", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
     const {
       name, price, description, image, images,
@@ -86,7 +86,7 @@ router.post("/", requireAuth, requireAdmin, async (req: Request, res: Response<A
 });
 
 // UPDATE product
-router.put("/:id", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.put("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
     console.log("Update Product Body:", req.body);
     const {
@@ -120,7 +120,7 @@ router.put("/:id", requireAuth, requireAdmin, async (req: Request, res: Response
 });
 
 // DELETE product
-router.delete("/:id", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<null>>) => {
+router.delete("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<null>>) => {
   try {
     await prisma.product.delete({
       where: { id: req.params.id },

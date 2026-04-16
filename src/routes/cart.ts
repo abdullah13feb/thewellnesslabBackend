@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -15,7 +15,7 @@ const findCart = async (identifier: string) => {
 };
 
 // ADMIN: Get all carts
-router.get("/admin/all", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.get("/admin/all", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
     const carts = await prisma.cart.findMany({
       where: {
@@ -37,7 +37,7 @@ router.get("/admin/all", requireAuth, requireAdmin, async (req: Request, res: Re
 });
 
 // ADMIN: Delete a cart by ID
-router.delete("/admin/:id", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.delete("/admin/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
     await prisma.cart.delete({ where: { id: req.params.id } });
     res.json({ success: true, message: "Cart deleted" });
