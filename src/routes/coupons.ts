@@ -1,6 +1,6 @@
 import { Router } from "express";
 import prisma from "../lib/prisma.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -31,7 +31,7 @@ router.post("/validate", async (req, res) => {
 });
 
 // Admin routes
-router.get("/", requireAuth, requireAdmin, async (req, res) => {
+router.get("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     try {
         const coupons = await prisma.coupon.findMany({
             orderBy: { createdAt: 'desc' }
@@ -42,7 +42,7 @@ router.get("/", requireAuth, requireAdmin, async (req, res) => {
     }
 });
 
-router.post("/", requireAuth, requireAdmin, async (req, res) => {
+router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     try {
         const { code, discount, type, description, expiry, minPurchase } = req.body;
         const coupon = await prisma.coupon.create({
@@ -61,7 +61,7 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
     }
 });
 
-router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
+router.delete("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     try {
         await prisma.coupon.delete({
             where: { id: req.params.id }

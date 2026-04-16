@@ -5,11 +5,68 @@ import prisma from '../lib/prisma.js';
 // Extend Express Request to include auth
 declare global {
   namespace Express {
-    interface Request extends StrictAuthProp { }
+    interface Request extends StrictAuthProp {
+      apiKey?: {
+        id: string;
+        name: string;
+      };
+    }
   }
 }
 
 export const requireAuth = ClerkExpressRequireAuth();
+
+const getApiKeyFromRequest = (req: Request) => {
+  const xApiKey = req.header('x-api-key');
+  if (xApiKey) {
+    return xApiKey.trim();
+  }
+
+  const authorization = req.header('authorization');
+  if (authorization?.toLowerCase().startsWith('apikey ')) {
+    return authorization.slice(7).trim();
+  }
+
+  return null;
+};
+
+const authenticateApiKey = async (req: Request) => {
+  const providedKey = getApiKeyFromRequest(req);
+  if (!providedKey) {
+    return null;
+  }
+
+  const apiKey = await prisma.apiKey.findFirst({
+    where: {
+      key: providedKey,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  if (apiKey) {
+    req.apiKey = apiKey;
+  }
+
+  return apiKey;
+};
+
+export const requireAuthOrApiKey = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const apiKey = await authenticateApiKey(req);
+    if (apiKey) {
+      return next();
+    }
+
+    return requireAuth(req, res, next);
+  } catch (error) {
+    console.error("API key auth error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
 
 export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -79,5 +136,23 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
   } catch (error) {
     console.error("Admin check error:", error);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+export const requireAdminOrApiKey = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (req.apiKey) {
+      return next();
+    }
+
+    const apiKey = await authenticateApiKey(req);
+    if (apiKey) {
+      return next();
+    }
+
+    return requireAdmin(req, res, next);
+  } catch (error) {
+    console.error("Admin or API key check error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 };

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -35,7 +35,7 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
 });
 
 // GET all contact submissions (Admin only)
-router.get("/", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.get("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
     try {
         const submissions = await prisma.contactSubmission.findMany({
             orderBy: { createdAt: "desc" },
@@ -48,7 +48,7 @@ router.get("/", requireAuth, requireAdmin, async (req: Request, res: Response<Ap
 });
 
 // UPDATE submission status
-router.put("/:id", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.put("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
     try {
         const { status } = req.body;
         const submission = await prisma.contactSubmission.update({
@@ -62,7 +62,7 @@ router.put("/:id", requireAuth, requireAdmin, async (req: Request, res: Response
 });
 
 // DELETE submission
-router.delete("/:id", requireAuth, requireAdmin, async (req: Request, res: Response<ApiResponse<any>>) => {
+router.delete("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
     try {
         await prisma.contactSubmission.delete({
             where: { id: req.params.id },

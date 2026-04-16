@@ -1,6 +1,6 @@
 import express from 'express';
 import prisma from '../lib/prisma.js';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuthOrApiKey, requireAdminOrApiKey } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -12,6 +12,7 @@ router.get('/', async (req, res) => {
         });
         res.json(blogs);
     } catch (error) {
+        console.log("Error fetching blogs:", error);
         res.status(500).json({ error: "Failed to fetch blogs" });
     }
 });
@@ -32,39 +33,57 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create blog (Admin only)
-router.post('/', requireAuth, requireAdmin, async (req, res) => {
+router.post('/', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     try {
-        const { title, content, image } = req.body;
+        const { title, slug, category, author, excerpt, content, image, readTime, featured } = req.body;
         const blog = await prisma.blog.create({
             data: {
                 title,
+                slug,
+                category,
+                author,
+                excerpt,
                 content,
                 image,
-                authorId: req.auth.userId!, // Assured by requireAuth
+                readTime,
+                featured,
+                authorId: req.auth?.userId || null,
             },
         });
         res.status(201).json(blog);
     } catch (error) {
+        console.error("Error creating blog:", error);
         res.status(500).json({ error: "Failed to create blog" });
     }
 });
 
 // Update blog (Admin only)
-router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.put('/:id', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     try {
-        const { title, content, image } = req.body;
+        const { title, slug, category, author, excerpt, content, image, readTime, featured } = req.body;
         const blog = await prisma.blog.update({
             where: { id: req.params.id },
-            data: { title, content, image },
+            data: {
+                title,
+                slug,
+                category,
+                author,
+                excerpt,
+                content,
+                image,
+                readTime,
+                featured
+            },
         });
         res.json(blog);
     } catch (error) {
+        console.error("Error updating blog:", error);
         res.status(500).json({ error: "Failed to update blog" });
     }
 });
 
 // Delete blog (Admin only)
-router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.delete('/:id', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     try {
         await prisma.blog.delete({
             where: { id: req.params.id },
