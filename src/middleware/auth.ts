@@ -150,7 +150,9 @@ export const requireAdminOrApiKey = async (req: Request, res: Response, next: Ne
       return next();
     }
 
-    return requireAdmin(req, res, next);
+    // If no API key, we must ensure Clerk auth is checked first
+    // requireAuth will populate req.auth, then we call requireAdmin
+    return requireAuth(req, res, () => requireAdmin(req, res, next));
   } catch (error) {
     console.error("Admin or API key check error:", error);
     return res.status(500).json({ error: "Internal Server Error" });
