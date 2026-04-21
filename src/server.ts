@@ -13,6 +13,7 @@ import uploadRoutes from "./routes/upload.js";
 import settingsRoutes from "./routes/settings.js";
 import couponRoutes from "./routes/coupons.js";
 import contactRoutes from "./routes/contact.js";
+import leadRoutes from "./routes/leads.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -67,6 +68,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/leads", leadRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
