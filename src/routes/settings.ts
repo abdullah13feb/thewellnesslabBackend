@@ -6,11 +6,7 @@ import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js
 const router = Router();
 
 const maskApiKey = (key: string) => {
-    if (key.length <= 8) {
-        return "****";
-    }
-
-    return `${key.slice(0, 4)}${"*".repeat(Math.max(4, key.length - 8))}${key.slice(-4)}`;
+    return key;
 };
 
 // Get all settings
