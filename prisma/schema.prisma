@@ -178,16 +178,27 @@ model ApiKey {
 }
 
 model Lead {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String?
+  email         String?
+  source        String?   // Lead Source
+  status        String    @default("NEW") // Lead Status
+  company       String?   // Company Name
+  jobTitle      String?   // Job Title
+  city          String?   // City / Location
+  dynamicFields Json?     // Dynamic key-value pairs
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model LeadStatus {
   id        String   @id @default(cuid())
-  name      String
-  phone     String?
-  email     String?
-  source    String?   // Lead Source
-  status    String    @default("NEW") // Lead Status
-  company   String?   // Company Name
-  jobTitle  String?   // Job Title
-  city      String?   // City / Location
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  label     String   @unique
+  value     String   @unique
+  color     String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
