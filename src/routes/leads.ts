@@ -1,11 +1,11 @@
 import { Router } from "express";
 import prisma from "../lib/prisma.js";
-import { requireAdminOrApiKey } from "../middleware/auth.js";
+import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js";
 
 const router = Router();
 
 // Create a lead - Protected by API key (X-API-KEY) or Admin
-router.post("/", requireAdminOrApiKey, async (req, res) => {
+router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
     const { name, phone, email, source, status, company, jobTitle, city } = req.body;
 
@@ -34,7 +34,7 @@ router.post("/", requireAdminOrApiKey, async (req, res) => {
 });
 
 // Get all leads - Protected by Admin
-router.get("/", requireAdminOrApiKey, async (req, res) => {
+router.get("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
     const leads = await prisma.lead.findMany({
       orderBy: { createdAt: "desc" },
@@ -48,7 +48,7 @@ router.get("/", requireAdminOrApiKey, async (req, res) => {
 });
 
 // Get lead by ID - Protected by Admin
-router.get("/:id", requireAdminOrApiKey, async (req, res) => {
+router.get("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     const lead = await prisma.lead.findUnique({
@@ -67,7 +67,7 @@ router.get("/:id", requireAdminOrApiKey, async (req, res) => {
 });
 
 // Update lead status or details
-router.patch("/:id", requireAdminOrApiKey, async (req, res) => {
+router.patch("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, name, phone, email, source, company, jobTitle, city } = req.body;
@@ -94,7 +94,7 @@ router.patch("/:id", requireAdminOrApiKey, async (req, res) => {
 });
 
 // Delete lead
-router.delete("/:id", requireAdminOrApiKey, async (req, res) => {
+router.delete("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.lead.delete({
