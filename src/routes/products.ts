@@ -47,7 +47,7 @@ router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request,
   try {
     const {
       name, price, description, image, images,
-      category, stock, slug, specs, includes, tag, tagline, trustBadges
+      category, stock, slug, specs, includes, tag, tagline, trustBadges, comparison
     } = req.body;
 
     if (!name || price === undefined) {
@@ -74,7 +74,8 @@ router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request,
         tag,
         tagline,
         trustBadges: trustBadges || [],
-        faq: req.body.faq || []
+        faq: req.body.faq || [],
+        comparison: comparison || {}
       },
     });
 
@@ -91,7 +92,7 @@ router.put("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Reques
     console.log("Update Product Body:", req.body);
     const {
       name, price, description, image, images,
-      category, stock, specs, includes, tag, tagline, trustBadges, faq
+      category, stock, specs, includes, tag, tagline, trustBadges, faq, comparison
     } = req.body;
 
     const product = await prisma.product.update({
@@ -110,6 +111,7 @@ router.put("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Reques
         ...(tagline !== undefined && { tagline }),
         ...(trustBadges !== undefined && { trustBadges }),
         ...(faq !== undefined && { faq }),
+        ...(comparison !== undefined && { comparison }),
       },
     });
 

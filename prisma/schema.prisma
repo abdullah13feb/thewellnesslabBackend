@@ -47,6 +47,7 @@ model Product {
   reviewCount Int    @default(0)
   trustBadges Json?
   faq         Json?
+  comparison  Json?
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
