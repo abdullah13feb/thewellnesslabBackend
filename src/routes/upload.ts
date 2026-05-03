@@ -34,13 +34,13 @@ if (missingKeys.length > 0) {
 
 const router = express.Router();
 
-// Configure Cloudinary Storage
+// Configure Cloudinary Storage with high limits and auto type (for video or images)
 const storage = new CloudinaryStorage({
     cloudinary,
     params: {
         folder: 'radiant-aura',
-        resource_type: 'image',
-        allowedFormats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+        resource_type: 'auto',
+        allowedFormats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm', 'avi'],
         public_id: (req: Request, file: Express.Multer.File) => {
             const ext = path.extname(file.originalname);
             const name = path.basename(file.originalname, ext)
@@ -48,7 +48,9 @@ const storage = new CloudinaryStorage({
                 .replace(/-+/g, '-')
                 .slice(0, 50);
 
-            return `${name}-${Date.now()}`;
+            // Using random token to absolutely prevent public_id collisions during parallel uploads
+            const uniqueToken = Math.random().toString(36).substring(2, 8);
+            return `${name}-${Date.now()}-${uniqueToken}`;
         }
     } as any
 });
@@ -56,7 +58,7 @@ const storage = new CloudinaryStorage({
 const upload = multer({
     storage,
     limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB limit
+        fileSize: 50 * 1024 * 1024, // 50MB limit to handle larger files
     },
 });
 
@@ -83,7 +85,7 @@ router.post("/image", upload.single("image"), (req: Request, res: Response) => {
 });
 
 // Multiple images upload
-router.post("/images", upload.array("images", 10), (req: Request, res: Response) => {
+router.post("/images", upload.array("images", 20), (req: Request, res: Response) => {
     try {
         if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
             return res.status(400).json({ success: false, error: "No files uploaded" });
