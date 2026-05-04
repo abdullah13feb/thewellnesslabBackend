@@ -26,7 +26,7 @@ export const sendOrderConfirmationEmail = async (order: any) => {
   }
 
   const mailOptions = {
-    from: `"Radiant Aura Labs" <${process.env.EMAIL_USER}>`,
+    from: `"the wellness lab" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: `Order Confirmation - #${order.id.slice(-6).toUpperCase()}`,
     html: `
@@ -39,7 +39,7 @@ export const sendOrderConfirmationEmail = async (order: any) => {
           body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #e5e5e5; -webkit-font-smoothing: antialiased; }
           .wrapper { padding: 40px 20px; background-color: #e5e5e5; width: 100%; box-sizing: border-box; }
           .main { background-color: #ffffff; margin: 0 auto; width: 100%; max-width: 500px; padding: 40px; box-sizing: border-box; }
-          .brand-logo { font-size: 26px; font-weight: 800; color: #111; letter-spacing: -1px; margin-bottom: 30px; text-transform: lowercase; }
+          .brand-logo { font-size: 26px; font-weight: 800; color: #111; letter-spacing: -1px; margin-bottom: 30px; }
           .greeting { font-size: 14px; color: #444; margin: 0 0 8px; }
           .greeting strong { font-size: 18px; color: #111; font-weight: 600; display: block; margin-top: 6px; }
           .divider { border-top: 1px solid #eaeaea; margin: 24px 0; }
@@ -59,11 +59,11 @@ export const sendOrderConfirmationEmail = async (order: any) => {
       <body>
         <div class="wrapper">
           <div class="main">
-            <div class="brand-logo">radiant aura</div>
+            <div class="brand-logo">THE<span style="color: #e63946; font-weight: 800;">WELLNESS</span>LAB</div>
             
             <div class="greeting">
               Hi ${order.guestName ? order.guestName.split(' ')[0] : 'Customer'},
-              <strong>Thank you for ordering from Radiant Aura</strong>
+              <strong>Thank you for ordering from THE<span style="color: #e63946; font-weight: 800;">WELLNESS</span>LAB</strong>
             </div>
 
             <div class="divider"></div>
@@ -91,12 +91,12 @@ export const sendOrderConfirmationEmail = async (order: any) => {
                 <td width="55" valign="top">
                   <div style="width: 40px; height: 40px; background-color: #e63946; color: #fff; text-align: center; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 1px;">
                     <table width="100%" height="100%" cellpadding="0" cellspacing="0">
-                      <tr><td align="center" valign="middle">RA</td></tr>
+                      <tr><td align="center" valign="middle">TWL</td></tr>
                     </table>
                   </div>
                 </td>
                 <td valign="middle">
-                  <h3 style="margin: 0 0 4px; font-size: 15px; color: #111; font-weight: 600;">Radiant Aura</h3>
+                  <h3 style="margin: 0 0 4px; font-size: 15px; color: #111; font-weight: 800; text-transform: uppercase;">THE<span style="color: #e63946; font-weight: 800;">WELLNESS</span>LAB</h3>
                   <p style="margin: 0; font-size: 11px; color: #666; line-height: 1.4;">
                     Dubai, United Arab Emirates<br>
                     <a href="mailto:support@thewellnesslab.ae" style="color: #666; text-decoration: none;">support@thewellnesslab.ae</a>
@@ -148,8 +148,21 @@ export const sendOrderConfirmationEmail = async (order: any) => {
             </div>
 
             <div class="disclaimer">
-              Radiant Aura employees or representatives will NEVER ask you for your personal information i.e. your bank account details, passwords, PIN, CVV, OTP etc. For your own safety, DO NOT share these details with anyone over phone, SMS or email.
+              thewellnesslab employees or representatives will NEVER ask you for your personal information i.e. your bank account details, passwords, PIN, CVV, OTP etc. For your own safety, DO NOT share these details with anyone over phone, SMS or email.
             </div>
+
+            <!-- Quiz Banner Section -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f3f4f6; color: #111111; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e5e7eb;">
+              <tr>
+                <td style="padding: 24px;">
+                  <h4 style="margin: 0 0 6px; font-size: 15px; font-weight: 800; text-transform: uppercase;">For your second order</h4>
+                  <p style="margin: 0; font-size: 12px; color: #4b5563;">Take a quick quiz on what suits your needs.</p>
+                </td>
+                <td align="right" style="padding: 24px;">
+                  <a href="https://thewellnesslab.ae/quiz" style="background-color: #111111; color: #ffffff; padding: 12px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; display: inline-block;">TAKE THE QUIZ</a>
+                </td>
+              </tr>
+            </table>
 
             <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #6d28d9; color: white; border-radius: 8px; margin-bottom: 30px;">
               <tr>
@@ -164,9 +177,8 @@ export const sendOrderConfirmationEmail = async (order: any) => {
             </table>
 
             <div class="footer">
-              © ${new Date().getFullYear()} - <strong>Radiant Aura</strong>. All rights reserved.<br>
-              Radiant Aura LLC<br>
-              Dubai, United Arab Emirates
+              © ${new Date().getFullYear()} - <strong>thewellnesslab</strong>. All rights reserved.
+            United Arab Emirates
             </div>
           </div>
         </div>
