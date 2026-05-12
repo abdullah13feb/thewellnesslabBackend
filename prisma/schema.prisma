@@ -203,3 +203,20 @@ model LeadStatus {
   updatedAt DateTime @updatedAt
 }
 
+model NajahForm {
+  id            String   @id @default(cuid())
+  formType      String   // "ANALYZE" or "CONTACT"
+  name          String
+  email         String
+  phone         String?
+  company       String?
+  designation   String?
+  website       String?
+  analyzeSocial Boolean  @default(false)
+  platforms     String[] @default([])
+  platformUrls  Json?    // Stores object of { platformId: url }
+  message       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
