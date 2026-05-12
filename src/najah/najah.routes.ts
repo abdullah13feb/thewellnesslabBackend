@@ -50,7 +50,17 @@ router.post('/analyze', async (req: Request, res: Response) => {
         analyzeSocial, 
         platforms, 
         platformUrls 
-    } = req.body;
+    } = req.body as {
+        name: string;
+        email: string;
+        phone: string;
+        company: string;
+        designation: string;
+        website: string;
+        analyzeSocial: boolean;
+        platforms: string[];
+        platformUrls: Record<string, string>;
+    };
 
     try {
         // 1. Save to Database
@@ -76,7 +86,7 @@ router.post('/analyze', async (req: Request, res: Response) => {
                 <div style="background: #fdf2ef; padding: 15px; border-radius: 8px; border-left: 4px solid #ec4e20; margin-top: 15px;">
                     <h3 style="margin-top: 0; color: #ec4e20; font-size: 16px;">Social Media Audit Requested</h3>
                     <ul style="padding-left: 20px; margin-bottom: 0;">
-                        ${platforms.map(p => `<li><strong>${p.toUpperCase()}:</strong> ${platformUrls?.[p] || 'URL not provided'}</li>`).join('')}
+                        ${platforms.map((p: string) => `<li><strong>${p.toUpperCase()}:</strong> ${platformUrls?.[p] || 'URL not provided'}</li>`).join('')}
                     </ul>
                 </div>
             `;
