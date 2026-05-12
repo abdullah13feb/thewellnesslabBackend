@@ -14,6 +14,7 @@ import settingsRoutes from "./routes/settings.js";
 import couponRoutes from "./routes/coupons.js";
 import contactRoutes from "./routes/contact.js";
 import leadRoutes from "./routes/leads.js";
+import najahRoutes from "./najah/najah.routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -26,10 +27,12 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  process.env.NAJAH_FRONTEND_URL,
   "https://production.d3nct9ywhbsaue.amplifyapp.com",
   "https://www.thewellnesslab.ae",
   "https://thewellnesslab.ae",
   "http://localhost:8080",
+  "http://localhost:5173",
   "http://localhost:5174"
 ].filter(Boolean) as string[];
 
@@ -71,6 +74,7 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/leads", leadRoutes);
+app.use("/api/najah", najahRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
