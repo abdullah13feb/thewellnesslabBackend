@@ -101,7 +101,18 @@ router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => 
 // Get all leads - Protected by Admin
 router.get("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
+    const { phone, email } = req.query;
+    const where: any = {};
+    
+    if (phone) {
+      where.phone = phone as string;
+    }
+    if (email) {
+      where.email = email as string;
+    }
+
     const leads = await prisma.lead.findMany({
+      where,
       orderBy: { createdAt: "desc" },
     });
 
@@ -135,7 +146,7 @@ router.get("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) =
 router.patch("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, name, phone, email, source, company, jobTitle, city, dynamicFields } = req.body;
+    const { status, name, phone, email, source, company, jobTitle, city, dynamicFields, whatsappSent, emailSent, whatsappSentAt, emailSentAt } = req.body;
 
     const lead = await prisma.lead.update({
       where: { id },
@@ -149,6 +160,10 @@ router.patch("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res)
         jobTitle,
         city,
         dynamicFields,
+        whatsappSent,
+        emailSent,
+        whatsappSentAt: whatsappSentAt ? new Date(whatsappSentAt) : undefined,
+        emailSentAt: emailSentAt ? new Date(emailSentAt) : undefined,
       },
     });
 

@@ -189,6 +189,10 @@ model Lead {
   jobTitle      String?   // Job Title
   city          String?   // City / Location
   dynamicFields Json?     // Dynamic key-value pairs
+  whatsappSent   Boolean  @default(false)
+  emailSent      Boolean  @default(false)
+  whatsappSentAt DateTime?
+  emailSentAt    DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
