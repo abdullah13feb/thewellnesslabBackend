@@ -15,6 +15,8 @@ import couponRoutes from "./routes/coupons.js";
 import contactRoutes from "./routes/contact.js";
 import leadRoutes from "./routes/leads.js";
 import najahRoutes from "./najah/najah.routes.js";
+import whatsappRoutes from "./routes/whatsapp.js";
+import { startWhatsappScheduler } from "./lib/whatsappScheduler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -75,6 +77,7 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/leads", leadRoutes);
 app.use("/api/najah", najahRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
@@ -104,6 +107,9 @@ app.use("/api/*", (req, res) => {
 app.get("*", (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
+
+// Start scheduler
+startWhatsappScheduler();
 
 // Start server
 app.listen(PORT, () => {

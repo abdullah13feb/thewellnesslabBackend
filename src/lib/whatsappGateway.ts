@@ -1,0 +1,205 @@
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const OPENWA_API_URL = process.env.OPENWA_API_URL || "https://ai.thewellnesslab.ae/api";
+const OPENWA_API_KEY = process.env.OPENWA_API_KEY || "";
+const OPENWA_SESSION_ID = process.env.OPENWA_SESSION_ID || "default";
+
+function getHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (OPENWA_API_KEY) {
+    headers["Authorization"] = `Bearer ${OPENWA_API_KEY}`;
+    headers["X-API-Key"] = OPENWA_API_KEY;
+  }
+  return headers;
+}
+
+/**
+ * Normalizes phone numbers to a clean format: e.g. 971501234567.
+ * Appends @c.us if requested.
+ */
+export function normalizePhoneNumber(phone: string, appendSuffix = true): string {
+  let cleaned = phone.replace(/\D/g, "");
+  
+  if (cleaned.startsWith("00")) {
+    cleaned = cleaned.substring(2);
+  }
+  
+  // UAE local numbers (e.g., 0501234567 or 501234567)
+  if (cleaned.startsWith("0")) {
+    cleaned = cleaned.substring(1);
+  }
+  
+  // If it's a standard 9-digit UAE mobile number (starts with 5), prepend 971
+  if (cleaned.length === 9 && cleaned.startsWith("5")) {
+    cleaned = "971" + cleaned;
+  }
+  
+  if (appendSuffix && !cleaned.endsWith("@c.us")) {
+    cleaned = `${cleaned}@c.us`;
+  }
+  
+  return cleaned;
+}
+
+/**
+ * Send a text message to a specific number using OpenWA
+ */
+export async function sendWhatsappMessage(
+  sessionId: string,
+  toPhone: string,
+  text: string
+): Promise<boolean> {
+  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const formattedPhone = normalizePhoneNumber(toPhone);
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/messages/send-text`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        chatId: formattedPhone,
+        text: text,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenWA Error response (${response.status}):`, errorText);
+      return false;
+    }
+
+    const data = await response.json();
+    return !!data;
+  } catch (error) {
+    console.error("Error in sendWhatsappMessage:", error);
+    return false;
+  }
+}
+
+/**
+ * Fetch all sessions from the OpenWA server
+ */
+export async function getSessionsList(): Promise<any[]> {
+  const url = `${OPENWA_API_URL}/sessions`;
+  try {
+    const response = await fetch(url, { headers: getHeaders() });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error("Error in getSessionsList:", error);
+    return [];
+  }
+}
+
+/**
+ * Get detailed status of a specific session
+ */
+export async function getSessionStatus(sessionId: string): Promise<any> {
+  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}`;
+  try {
+    const response = await fetch(url, { headers: getHeaders() });
+    if (!response.ok) {
+      return { status: "DISCONNECTED", error: `Server returned ${response.status}` };
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error in getSessionStatus:", error);
+    return { status: "DISCONNECTED", error: "Could not reach gateway server" };
+  }
+}
+
+/**
+ * Start/initialize a WhatsApp session
+ */
+export async function startSession(sessionId: string): Promise<boolean> {
+  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/start`;
+  try {
+    // Check if session exists first, if not we create it
+    const createUrl = `${OPENWA_API_URL}/sessions`;
+    await fetch(createUrl, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ name: finalSessionId }),
+    });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: getHeaders(),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("Error in startSession:", error);
+    return false;
+  }
+}
+
+/**
+ * Stop/disconnect a WhatsApp session
+ */
+export async function stopSession(sessionId: string): Promise<boolean> {
+  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/stop`;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: getHeaders(),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("Error in stopSession:", error);
+    return false;
+  }
+}
+
+/**
+ * Delete a session completely
+ */
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}`;
+  try {
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: getHeaders(),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("Error in deleteSession:", error);
+    return false;
+  }
+}
+
+/**
+ * Get QR code data for authentication
+ */
+export async function getSessionQR(sessionId: string): Promise<any> {
+  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/qr`;
+  try {
+    const response = await fetch(url, { headers: getHeaders() });
+    if (!response.ok) return null;
+    
+    // Check content type to see if it's image or json
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("json")) {
+      return await response.json();
+    } else {
+      // If it's a raw image or text, return the base64 / text URL
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString("base64");
+      return { qr: `data:image/png;base64,${base64}` };
+    }
+  } catch (error) {
+    console.error("Error in getSessionQR:", error);
+    return null;
+  }
+}

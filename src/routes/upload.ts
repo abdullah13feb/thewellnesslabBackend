@@ -40,7 +40,7 @@ const storage = new CloudinaryStorage({
     params: {
         folder: 'radiant-aura',
         resource_type: 'auto',
-        allowedFormats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm', 'avi'],
+        allowedFormats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm', 'avi', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'],
         public_id: (req: Request, file: Express.Multer.File) => {
             const ext = path.extname(file.originalname);
             const name = path.basename(file.originalname, ext)

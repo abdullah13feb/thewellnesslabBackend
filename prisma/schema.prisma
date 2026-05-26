@@ -224,3 +224,45 @@ model NajahForm {
   updatedAt     DateTime @updatedAt
 }
 
+model WhatsappTemplate {
+  id           String             @id @default(cuid())
+  name         String
+  body         String             // e.g., "Hello {{name}}, welcome to Radiant Aura Labs!"
+  variables    String[]           // e.g., ["name"]
+  type         String             @default("TEXT") // TEXT, IMAGE, VIDEO, DOCUMENT
+  mediaUrl     String?            // optional attachment URL
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  campaigns    WhatsappCampaign[]
+}
+
+model WhatsappCampaign {
+  id           String                      @id @default(cuid())
+  name         String
+  sessionId    String                      @default("default")
+  templateId   String?
+  template     WhatsappTemplate?           @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  customBody   String?                     // fallback message template
+  status       String                      @default("DRAFT") // DRAFT, SCHEDULED, SENDING, COMPLETED, FAILED, CANCELLED
+  scheduledAt  DateTime?
+  totalCount   Int                         @default(0)
+  successCount Int                         @default(0)
+  failCount    Int                         @default(0)
+  recipients   WhatsappCampaignRecipient[]
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+}
+
+model WhatsappCampaignRecipient {
+  id            String           @id @default(cuid())
+  campaignId    String
+  campaign      WhatsappCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  phone         String
+  name          String?
+  variables     Json?            // custom variables from CSV
+  status        String           @default("PENDING") // PENDING, SENT, FAILED
+  error         String?
+  sentAt        DateTime?
+}
+
+
