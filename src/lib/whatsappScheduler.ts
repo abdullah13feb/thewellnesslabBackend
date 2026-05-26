@@ -1,8 +1,14 @@
 import prisma from "./prisma.js";
-import { sendWhatsappMessage, sendWhatsappMediaMessage } from "./whatsappGateway.js";
+import {
+  sendWhatsappMessage,
+  sendWhatsappMediaMessage,
+  sendWhatsappBulk,
+  getBatchStatus,
+  cancelBatch,
+  normalizePhoneNumber
+} from "./whatsappGateway.js";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
-const SEND_DELAY_MS = 2000; // 2 seconds between messages to prevent spam flags
 
 export function startWhatsappScheduler() {
   if (schedulerInterval) {
@@ -12,10 +18,12 @@ export function startWhatsappScheduler() {
 
   console.log("⏰ WhatsApp Broadcast Scheduler initialized.");
 
-  // Check every 15 seconds for scheduled promotions
+  // Check every 15 seconds for scheduled promotions and active bulk statuses
   schedulerInterval = setInterval(async () => {
     try {
       const now = new Date();
+      
+      // 1. Process scheduled campaigns
       const dueCampaigns = await prisma.whatsappCampaign.findMany({
         where: {
           status: "SCHEDULED",
@@ -35,6 +43,10 @@ export function startWhatsappScheduler() {
         // Execute background dispatch without blocking the scheduler loop
         void processCampaign(campaign.id);
       }
+
+      // 2. Poll progress for active bulk campaigns
+      await pollActiveCampaigns();
+
     } catch (error) {
       console.error("❌ Error in WhatsApp Scheduler loop:", error);
     }
@@ -50,7 +62,87 @@ export function stopWhatsappScheduler() {
 }
 
 /**
- * Background worker that dispatches messages to campaign recipients sequentially
+ * Background worker that queries active campaigns and polls progress from the gateway
+ */
+async function pollActiveCampaigns() {
+  try {
+    const activeCampaigns = await prisma.whatsappCampaign.findMany({
+      where: {
+        status: "SENDING",
+        batchId: { not: null },
+      },
+    });
+
+    for (const campaign of activeCampaigns) {
+      const response = await getBatchStatus(campaign.sessionId, campaign.batchId!);
+      if (!response || !response.success || !response.data) {
+        console.error(`⚠️ Could not fetch batch status for campaign ${campaign.id}`);
+        continue;
+      }
+
+      const batch = response.data;
+      const progress = batch.progress || { total: campaign.totalCount, processed: 0, remaining: campaign.totalCount };
+      
+      console.log(`📊 Campaign "${campaign.name}" bulk progress: ${progress.processed}/${progress.total} (Status: ${batch.status})`);
+
+      if (batch.status === "completed") {
+        // Complete the campaign in our DB
+        await prisma.whatsappCampaign.update({
+          where: { id: campaign.id },
+          data: {
+            status: "COMPLETED",
+            successCount: progress.total,
+            failCount: 0,
+          },
+        });
+
+        // Mark all remaining pending recipients as SENT
+        await prisma.whatsappCampaignRecipient.updateMany({
+          where: { campaignId: campaign.id, status: "PENDING" },
+          data: { status: "SENT", sentAt: new Date() },
+        });
+
+        console.log(`✅ Bulk campaign ${campaign.id} completed successfully.`);
+      } else if (batch.status === "cancelled" || batch.status === "failed") {
+        const finalStatus = batch.status === "cancelled" ? "CANCELLED" : "FAILED";
+        
+        await prisma.whatsappCampaign.update({
+          where: { id: campaign.id },
+          data: {
+            status: finalStatus,
+            successCount: progress.processed,
+            failCount: progress.total - progress.processed,
+          },
+        });
+
+        // Update remaining pending recipients to FAILED
+        await prisma.whatsappCampaignRecipient.updateMany({
+          where: { campaignId: campaign.id, status: "PENDING" },
+          data: {
+            status: "FAILED",
+            error: `Bulk campaign batch execution was ${batch.status} on the gateway`,
+          },
+        });
+
+        console.log(`⚠️ Bulk campaign ${campaign.id} execution ended with status: ${finalStatus}`);
+      } else {
+        // Still processing, update successCount and failCount live
+        await prisma.whatsappCampaign.update({
+          where: { id: campaign.id },
+          data: {
+            successCount: progress.processed,
+            failCount: progress.total - progress.processed - (progress.remaining || 0),
+          },
+        });
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error polling active campaigns:", error);
+  }
+}
+
+/**
+ * Background worker that dispatches messages to campaign recipients via native bulk API
  */
 export async function processCampaign(campaignId: string) {
   try {
@@ -69,28 +161,34 @@ export async function processCampaign(campaignId: string) {
       return;
     }
 
-    if (campaign.status === "CANCELLED") {
-      console.log(`Campaign ${campaignId} was already cancelled.`);
+    if (campaign.recipients.length === 0) {
+      console.log(`No pending recipients for campaign: ${campaignId}`);
+      await prisma.whatsappCampaign.update({
+        where: { id: campaignId },
+        data: { status: "COMPLETED" },
+      });
       return;
     }
 
-    let successCount = campaign.successCount;
-    let failCount = campaign.failCount;
+    console.log(`Preparing ${campaign.recipients.length} messages for bulk dispatch in campaign: ${campaign.name}`);
 
-    console.log(`Sending ${campaign.recipients.length} pending messages for campaign: ${campaign.name}`);
+    const bulkMessages: Array<{
+      chatId: string;
+      type: "text" | "image" | "video" | "document";
+      text: string;
+      file?: string;
+      filename?: string;
+    }> = [];
+
+    const hasMedia = campaign.template && campaign.template.type !== "TEXT" && campaign.template.mediaUrl;
+    let type: "text" | "image" | "video" | "document" = "text";
+    if (campaign.template) {
+      if (campaign.template.type === "IMAGE") type = "image";
+      else if (campaign.template.type === "VIDEO") type = "video";
+      else if (campaign.template.type === "DOCUMENT") type = "document";
+    }
 
     for (const recipient of campaign.recipients) {
-      // Check if campaign was cancelled during sending
-      const currentCampaign = await prisma.whatsappCampaign.findUnique({
-        where: { id: campaignId },
-        select: { status: true },
-      });
-
-      if (!currentCampaign || currentCampaign.status === "CANCELLED") {
-        console.log(`⚠️ Campaign ${campaignId} cancelled during active processing.`);
-        return;
-      }
-
       // Compile message contents
       let messageText = campaign.customBody || campaign.template?.body || "";
       
@@ -111,66 +209,55 @@ export async function processCampaign(campaignId: string) {
         messageText = messageText.replace(placeholderRegex, value || "");
       }
 
-      try {
-        let success = false;
-        const hasMedia = campaign.template && campaign.template.type !== "TEXT" && campaign.template.mediaUrl;
+      const formattedPhone = normalizePhoneNumber(recipient.phone);
 
-        if (hasMedia) {
-          success = await sendWhatsappMediaMessage(
-            campaign.sessionId,
-            recipient.phone,
-            messageText,
-            campaign.template!.mediaUrl!,
-            campaign.template!.type
-          );
-        } else {
-          success = await sendWhatsappMessage(campaign.sessionId, recipient.phone, messageText);
-        }
-        
-        if (success) {
-          await prisma.whatsappCampaignRecipient.update({
-            where: { id: recipient.id },
-            data: { status: "SENT", sentAt: new Date() },
-          });
-          successCount++;
-        } else {
-          throw new Error("OpenWA gateway rejected the message");
-        }
-      } catch (err: any) {
-        console.error(`❌ Failed to send broadcast to ${recipient.phone}:`, err);
-        await prisma.whatsappCampaignRecipient.update({
-          where: { id: recipient.id },
-          data: {
-            status: "FAILED",
-            error: err.message || "Gateway communication error",
-          },
-        });
-        failCount++;
+      const msgPayload: any = {
+        chatId: formattedPhone,
+        type: type,
+        text: messageText,
+      };
+
+      if (hasMedia) {
+        msgPayload.file = campaign.template!.mediaUrl!;
+        msgPayload.filename = campaign.template!.mediaUrl!.split("/").pop() || "file";
       }
 
-      // Update progress in the database after every send so user can see it live
-      await prisma.whatsappCampaign.update({
-        where: { id: campaignId },
-        data: { successCount, failCount },
-      });
-
-      // Sequential delay to prevent getting flagged as spam by WhatsApp
-      await new Promise((resolve) => setTimeout(resolve, SEND_DELAY_MS));
+      bulkMessages.push(msgPayload);
     }
 
-    // Determine final status
-    const finalStatus = failCount === campaign.totalCount ? "FAILED" : "COMPLETED";
-    await prisma.whatsappCampaign.update({
-      where: { id: campaignId },
-      data: { status: finalStatus },
-    });
+    // Call native bulk sending endpoint on the gateway
+    const result = await sendWhatsappBulk(campaign.sessionId, bulkMessages, campaign.id);
 
-    console.log(`✅ Campaign ${campaignId} finished execution. Success: ${successCount}, Failures: ${failCount}`);
-  } catch (error) {
+    if (result && result.success) {
+      console.log(`✅ Bulk campaign ${campaignId} successfully enqueued on gateway. Batch ID: ${campaign.id}`);
+      
+      // Update campaign in DB with batchId
+      await prisma.whatsappCampaign.update({
+        where: { id: campaignId },
+        data: {
+          batchId: campaign.id,
+          status: "SENDING"
+        },
+      });
+    } else {
+      throw new Error(result?.error?.message || "Gateway rejected bulk messaging payload");
+    }
+
+  } catch (error: any) {
     console.error(`❌ Global error in processCampaign for ${campaignId}:`, error);
+    
     await prisma.whatsappCampaign.update({
       where: { id: campaignId },
       data: { status: "FAILED" },
+    });
+
+    // Mark all pending recipients as FAILED
+    await prisma.whatsappCampaignRecipient.updateMany({
+      where: { campaignId, status: "PENDING" },
+      data: {
+        status: "FAILED",
+        error: error.message || "Failed to initialize bulk campaign on gateway",
+      },
     });
   }
 }

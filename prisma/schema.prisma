@@ -240,6 +240,7 @@ model WhatsappCampaign {
   id           String                      @id @default(cuid())
   name         String
   sessionId    String                      @default("default")
+  batchId      String?                     // OpenWA batch ID
   templateId   String?
   template     WhatsappTemplate?           @relation(fields: [templateId], references: [id], onDelete: SetNull)
   customBody   String?                     // fallback message template

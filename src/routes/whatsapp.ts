@@ -7,7 +7,8 @@ import {
   startSession,
   stopSession,
   sendWhatsappMessage,
-  normalizePhoneNumber
+  normalizePhoneNumber,
+  cancelBatch
 } from "../lib/whatsappGateway.js";
 
 const router = Router();
@@ -297,6 +298,16 @@ router.post("/campaigns/:id/cancel", async (req, res) => {
 
     if (campaign.status === "COMPLETED" || campaign.status === "FAILED") {
       return res.status(400).json({ success: false, error: "Cannot cancel a completed campaign" });
+    }
+
+    // If it's an active bulk campaign on the gateway, request cancellation
+    if (campaign.batchId && campaign.status === "SENDING") {
+      try {
+        await cancelBatch(campaign.sessionId, campaign.batchId);
+        console.log(`Cancelled bulk batch ${campaign.batchId} on gateway`);
+      } catch (gateErr) {
+        console.error(`Failed to cancel batch ${campaign.batchId} on gateway:`, gateErr);
+      }
     }
 
     await prisma.whatsappCampaign.update({

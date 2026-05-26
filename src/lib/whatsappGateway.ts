@@ -264,3 +264,105 @@ export async function sendWhatsappMediaMessage(
   }
 }
 
+/**
+ * Send bulk messages using OpenWA send-bulk endpoint
+ */
+export async function sendWhatsappBulk(
+  sessionId: string,
+  messages: Array<{
+    chatId: string;
+    type: "text" | "image" | "video" | "document";
+    text: string;
+    file?: string;
+    filename?: string;
+  }>,
+  batchId?: string
+): Promise<any> {
+  const finalSessionId = getFinalSessionId(sessionId);
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/messages/send-bulk`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        batchId: batchId || undefined,
+        messages: messages,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenWA Bulk Send Error response (${response.status}):`, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error in sendWhatsappBulk:", error);
+    return null;
+  }
+}
+
+/**
+ * Get the status/progress of a bulk message batch
+ */
+export async function getBatchStatus(
+  sessionId: string,
+  batchId: string
+): Promise<any> {
+  const finalSessionId = getFinalSessionId(sessionId);
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/messages/batch/${batchId}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenWA Batch Status Error response (${response.status}):`, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error in getBatchStatus:", error);
+    return null;
+  }
+}
+
+/**
+ * Cancel a running bulk message batch
+ */
+export async function cancelBatch(
+  sessionId: string,
+  batchId: string
+): Promise<boolean> {
+  const finalSessionId = getFinalSessionId(sessionId);
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/messages/batch/${batchId}/cancel`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenWA Cancel Batch Error response (${response.status}):`, errorText);
+      return false;
+    }
+
+    const data = await response.json();
+    return !!data;
+  } catch (error) {
+    console.error("Error in cancelBatch:", error);
+    return false;
+  }
+}
+
+
