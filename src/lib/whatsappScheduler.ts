@@ -170,39 +170,34 @@ export async function processCampaign(campaignId: string) {
       return;
     }
 
-    console.log(`Preparing ${campaign.recipients.length} messages for bulk dispatch in campaign: ${campaign.name}`);
-
-    const bulkMessages: Array<{
-      chatId: string;
-      type: "text" | "image" | "video" | "document";
-      content: {
-        text?: string;
-        image?: { url: string };
-        video?: { url: string };
-        audio?: { url: string };
-        document?: { url: string };
-        filename?: string;
-        caption?: string;
-      };
-      variables?: Record<string, any>;
-    }> = [];
+    console.log(`🚀 Starting sequential WhatsApp campaign delivery for: ${campaign.name}. Total: ${campaign.recipients.length}`);
 
     const hasMedia = campaign.template && campaign.template.type !== "TEXT" && campaign.template.mediaUrl;
-    let type: "text" | "image" | "video" | "document" = "text";
-    if (campaign.template) {
-      if (campaign.template.type === "IMAGE") type = "image";
-      else if (campaign.template.type === "VIDEO") type = "video";
-      else if (campaign.template.type === "DOCUMENT") type = "document";
-    }
+    
+    let successCount = 0;
+    let failCount = 0;
 
     for (const recipient of campaign.recipients) {
-      // Compile message contents
+      // 1. Check if campaign has been CANCELLED by the user
+      const checkCampaign = await prisma.whatsappCampaign.findUnique({
+        where: { id: campaignId },
+        select: { status: true }
+      });
+
+      if (checkCampaign?.status === "CANCELLED") {
+        console.log(`🛑 Campaign ${campaignId} was cancelled by administrator. Halting sequential delivery.`);
+        // Mark all remaining pending recipients as FAILED
+        await prisma.whatsappCampaignRecipient.updateMany({
+          where: { campaignId, status: "PENDING" },
+          data: { status: "FAILED", error: "Campaign was cancelled by administrator" }
+        });
+        return;
+      }
+
+      // 2. Compile message body with variable substitutions
       let messageText = campaign.customBody || campaign.template?.body || "";
-      
-      // Parse custom variables (from CSV dynamic headers)
       const variablesMap = (recipient.variables as Record<string, string>) || {};
       
-      // Inject standard parameters if not overridden
       if (recipient.name && !variablesMap["name"]) {
         variablesMap["name"] = recipient.name;
       }
@@ -210,54 +205,67 @@ export async function processCampaign(campaignId: string) {
         variablesMap["phone"] = recipient.phone;
       }
 
-      // Replace placeholders: e.g., {{name}}, {{phone}}, {{company}}
       for (const [key, value] of Object.entries(variablesMap)) {
         const placeholderRegex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi");
         messageText = messageText.replace(placeholderRegex, value || "");
       }
 
-      const formattedPhone = normalizePhoneNumber(recipient.phone);
-
-      const content: any = {};
-      if (type === "text") {
-        content.text = messageText;
-      } else {
-        content.caption = messageText;
-        if (type === "image") {
-          content.image = { url: campaign.template!.mediaUrl! };
-        } else if (type === "video") {
-          content.video = { url: campaign.template!.mediaUrl! };
-        } else if (type === "document") {
-          content.document = { url: campaign.template!.mediaUrl! };
-          content.filename = campaign.template!.mediaUrl!.split("/").pop() || "file";
+      // 3. Dispatch the message
+      let success = false;
+      try {
+        if (hasMedia) {
+          success = await sendWhatsappMediaMessage(
+            campaign.sessionId,
+            recipient.phone,
+            messageText,
+            campaign.template!.mediaUrl!,
+            campaign.template!.type
+          );
+        } else {
+          success = await sendWhatsappMessage(campaign.sessionId, recipient.phone, messageText);
         }
+      } catch (sendErr: any) {
+        console.error(`Error sending to ${recipient.phone}:`, sendErr);
+        success = false;
       }
 
-      bulkMessages.push({
-        chatId: formattedPhone,
-        type: type,
-        content: content,
-        variables: variablesMap
-      });
-    }
+      // 4. Update Recipient and Campaign status live in the DB
+      if (success) {
+        successCount++;
+        await prisma.whatsappCampaignRecipient.update({
+          where: { id: recipient.id },
+          data: { status: "SENT", sentAt: new Date() }
+        });
+      } else {
+        failCount++;
+        await prisma.whatsappCampaignRecipient.update({
+          where: { id: recipient.id },
+          data: { status: "FAILED", error: "Gateway rejected message. Check session connection state." }
+        });
+      }
 
-    // Call native bulk sending endpoint on the gateway
-    const result = await sendWhatsappBulk(campaign.sessionId, bulkMessages, campaign.id);
-
-    if (result && result.success) {
-      console.log(`✅ Bulk campaign ${campaignId} successfully enqueued on gateway. Batch ID: ${campaign.id}`);
-      
-      // Update campaign in DB with batchId
       await prisma.whatsappCampaign.update({
         where: { id: campaignId },
         data: {
-          batchId: campaign.id,
-          status: "SENDING"
-        },
+          successCount,
+          failCount,
+        }
       });
-    } else {
-      throw new Error(result?.error?.message || "Gateway rejected bulk messaging payload");
+
+      console.log(`✉️ Delivered to ${recipient.phone}: ${success ? "✅ SUCCESS" : "❌ FAILED"}. Progress: ${successCount + failCount}/${campaign.recipients.length}`);
+
+      // 5. Anti-Ban Delay: Sleep for a random interval between 2,000ms and 5,000ms (2 to 5 seconds)
+      const delay = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
+
+    // 6. Complete campaign in DB
+    await prisma.whatsappCampaign.update({
+      where: { id: campaignId },
+      data: { status: "COMPLETED" }
+    });
+
+    console.log(`✅ Campaign ${campaignId} completed. Successful: ${successCount}, Failed: ${failCount}`);
 
   } catch (error: any) {
     console.error(`❌ Global error in processCampaign for ${campaignId}:`, error);
@@ -267,12 +275,11 @@ export async function processCampaign(campaignId: string) {
       data: { status: "FAILED" },
     });
 
-    // Mark all pending recipients as FAILED
     await prisma.whatsappCampaignRecipient.updateMany({
       where: { campaignId, status: "PENDING" },
       data: {
         status: "FAILED",
-        error: error.message || "Failed to initialize bulk campaign on gateway",
+        error: error.message || "Failed to execute sequential campaign runner",
       },
     });
   }

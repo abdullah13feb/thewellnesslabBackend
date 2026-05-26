@@ -224,8 +224,7 @@ export async function sendWhatsappMediaMessage(
   let endpoint = "send-image";
   const bodyData: Record<string, any> = {
     chatId: formattedPhone,
-    file: mediaUrl,
-    filename: mediaUrl.split("/").pop() || "file",
+    url: mediaUrl,
   };
 
   if (mediaType === "VIDEO") {
@@ -234,7 +233,7 @@ export async function sendWhatsappMediaMessage(
   } else if (mediaType === "DOCUMENT") {
     endpoint = "send-document";
     bodyData.caption = text;
-    bodyData.title = text;
+    bodyData.filename = mediaUrl.split("/").pop() || "document";
   } else {
     // IMAGE
     endpoint = "send-image";
