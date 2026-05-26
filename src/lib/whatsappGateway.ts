@@ -272,9 +272,16 @@ export async function sendWhatsappBulk(
   messages: Array<{
     chatId: string;
     type: "text" | "image" | "video" | "document";
-    text: string;
-    file?: string;
-    filename?: string;
+    content: {
+      text?: string;
+      image?: { url: string };
+      video?: { url: string };
+      audio?: { url: string };
+      document?: { url: string };
+      filename?: string;
+      caption?: string;
+    };
+    variables?: Record<string, any>;
   }>,
   batchId?: string
 ): Promise<any> {
@@ -288,6 +295,11 @@ export async function sendWhatsappBulk(
       body: JSON.stringify({
         batchId: batchId || undefined,
         messages: messages,
+        options: {
+          delayBetweenMessages: 3000,
+          randomizeDelay: true,
+          stopOnError: false
+        }
       }),
     });
 

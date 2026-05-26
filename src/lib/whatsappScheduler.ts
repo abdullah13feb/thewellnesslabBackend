@@ -175,9 +175,16 @@ export async function processCampaign(campaignId: string) {
     const bulkMessages: Array<{
       chatId: string;
       type: "text" | "image" | "video" | "document";
-      text: string;
-      file?: string;
-      filename?: string;
+      content: {
+        text?: string;
+        image?: { url: string };
+        video?: { url: string };
+        audio?: { url: string };
+        document?: { url: string };
+        filename?: string;
+        caption?: string;
+      };
+      variables?: Record<string, any>;
     }> = [];
 
     const hasMedia = campaign.template && campaign.template.type !== "TEXT" && campaign.template.mediaUrl;
@@ -211,18 +218,27 @@ export async function processCampaign(campaignId: string) {
 
       const formattedPhone = normalizePhoneNumber(recipient.phone);
 
-      const msgPayload: any = {
-        chatId: formattedPhone,
-        type: type,
-        text: messageText,
-      };
-
-      if (hasMedia) {
-        msgPayload.file = campaign.template!.mediaUrl!;
-        msgPayload.filename = campaign.template!.mediaUrl!.split("/").pop() || "file";
+      const content: any = {};
+      if (type === "text") {
+        content.text = messageText;
+      } else {
+        content.caption = messageText;
+        if (type === "image") {
+          content.image = { url: campaign.template!.mediaUrl! };
+        } else if (type === "video") {
+          content.video = { url: campaign.template!.mediaUrl! };
+        } else if (type === "document") {
+          content.document = { url: campaign.template!.mediaUrl! };
+          content.filename = campaign.template!.mediaUrl!.split("/").pop() || "file";
+        }
       }
 
-      bulkMessages.push(msgPayload);
+      bulkMessages.push({
+        chatId: formattedPhone,
+        type: type,
+        content: content,
+        variables: variablesMap
+      });
     }
 
     // Call native bulk sending endpoint on the gateway
