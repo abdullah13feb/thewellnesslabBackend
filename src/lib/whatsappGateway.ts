@@ -6,6 +6,10 @@ const OPENWA_API_URL = process.env.OPENWA_API_URL || "https://ai.thewellnesslab.
 const OPENWA_API_KEY = process.env.OPENWA_API_KEY || "";
 const OPENWA_SESSION_ID = process.env.OPENWA_SESSION_ID || "default";
 
+function getFinalSessionId(sessionId: string): string {
+  return !sessionId || sessionId === "default" ? OPENWA_SESSION_ID : sessionId;
+}
+
 function getHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -53,7 +57,7 @@ export async function sendWhatsappMessage(
   toPhone: string,
   text: string
 ): Promise<boolean> {
-  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const finalSessionId = getFinalSessionId(sessionId);
   const formattedPhone = normalizePhoneNumber(toPhone);
   const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/messages/send-text`;
 
@@ -101,7 +105,7 @@ export async function getSessionsList(): Promise<any[]> {
  * Get detailed status of a specific session
  */
 export async function getSessionStatus(sessionId: string): Promise<any> {
-  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const finalSessionId = getFinalSessionId(sessionId);
   const url = `${OPENWA_API_URL}/sessions/${finalSessionId}`;
   try {
     const response = await fetch(url, { headers: getHeaders() });
@@ -120,7 +124,7 @@ export async function getSessionStatus(sessionId: string): Promise<any> {
  * Start/initialize a WhatsApp session
  */
 export async function startSession(sessionId: string): Promise<boolean> {
-  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const finalSessionId = getFinalSessionId(sessionId);
   const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/start`;
   try {
     // Check if session exists first, if not we create it
@@ -146,7 +150,7 @@ export async function startSession(sessionId: string): Promise<boolean> {
  * Stop/disconnect a WhatsApp session
  */
 export async function stopSession(sessionId: string): Promise<boolean> {
-  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const finalSessionId = getFinalSessionId(sessionId);
   const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/stop`;
   try {
     const response = await fetch(url, {
@@ -164,7 +168,7 @@ export async function stopSession(sessionId: string): Promise<boolean> {
  * Delete a session completely
  */
 export async function deleteSession(sessionId: string): Promise<boolean> {
-  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const finalSessionId = getFinalSessionId(sessionId);
   const url = `${OPENWA_API_URL}/sessions/${finalSessionId}`;
   try {
     const response = await fetch(url, {
@@ -182,7 +186,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
  * Get QR code data for authentication
  */
 export async function getSessionQR(sessionId: string): Promise<any> {
-  const finalSessionId = sessionId || OPENWA_SESSION_ID;
+  const finalSessionId = getFinalSessionId(sessionId);
   const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/qr`;
   try {
     const response = await fetch(url, { headers: getHeaders() });
