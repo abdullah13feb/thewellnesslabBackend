@@ -202,8 +202,65 @@ export async function getSessionQR(sessionId: string): Promise<any> {
       const base64 = Buffer.from(buffer).toString("base64");
       return { qr: `data:image/png;base64,${base64}` };
     }
-  } catch (error) {
+    } catch (error) {
     console.error("Error in getSessionQR:", error);
     return null;
   }
 }
+
+/**
+ * Send an image, video, or document using OpenWA media endpoints
+ */
+export async function sendWhatsappMediaMessage(
+  sessionId: string,
+  toPhone: string,
+  text: string,
+  mediaUrl: string,
+  mediaType: string
+): Promise<boolean> {
+  const finalSessionId = getFinalSessionId(sessionId);
+  const formattedPhone = normalizePhoneNumber(toPhone);
+  
+  let endpoint = "send-image";
+  const bodyData: Record<string, any> = {
+    chatId: formattedPhone,
+    file: mediaUrl,
+    filename: mediaUrl.split("/").pop() || "file",
+  };
+
+  if (mediaType === "VIDEO") {
+    endpoint = "send-video";
+    bodyData.caption = text;
+  } else if (mediaType === "DOCUMENT") {
+    endpoint = "send-document";
+    bodyData.caption = text;
+    bodyData.title = text;
+  } else {
+    // IMAGE
+    endpoint = "send-image";
+    bodyData.caption = text;
+  }
+
+  const url = `${OPENWA_API_URL}/sessions/${finalSessionId}/messages/${endpoint}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(bodyData),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenWA Media Error response (${response.status}):`, errorText);
+      return false;
+    }
+
+    const data = await response.json();
+    return !!data;
+  } catch (error) {
+    console.error("Error in sendWhatsappMediaMessage:", error);
+    return false;
+  }
+}
+

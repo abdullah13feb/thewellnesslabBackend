@@ -1,5 +1,5 @@
 import prisma from "./prisma.js";
-import { sendWhatsappMessage } from "./whatsappGateway.js";
+import { sendWhatsappMessage, sendWhatsappMediaMessage } from "./whatsappGateway.js";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 const SEND_DELAY_MS = 2000; // 2 seconds between messages to prevent spam flags
@@ -112,7 +112,20 @@ export async function processCampaign(campaignId: string) {
       }
 
       try {
-        const success = await sendWhatsappMessage(campaign.sessionId, recipient.phone, messageText);
+        let success = false;
+        const hasMedia = campaign.template && campaign.template.type !== "TEXT" && campaign.template.mediaUrl;
+
+        if (hasMedia) {
+          success = await sendWhatsappMediaMessage(
+            campaign.sessionId,
+            recipient.phone,
+            messageText,
+            campaign.template!.mediaUrl!,
+            campaign.template!.type
+          );
+        } else {
+          success = await sendWhatsappMessage(campaign.sessionId, recipient.phone, messageText);
+        }
         
         if (success) {
           await prisma.whatsappCampaignRecipient.update({
