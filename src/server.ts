@@ -16,7 +16,9 @@ import contactRoutes from "./routes/contact.js";
 import leadRoutes from "./routes/leads.js";
 import najahRoutes from "./najah/najah.routes.js";
 import whatsappRoutes from "./routes/whatsapp.js";
+import marketingRoutes from "./routes/marketing.js";
 import { startWhatsappScheduler } from "./lib/whatsappScheduler.js";
+import { startEmailScheduler } from "./services/emailScheduler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -78,6 +80,7 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/leads", leadRoutes);
 app.use("/api/najah", najahRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
+app.use("/api/marketing", marketingRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
@@ -110,6 +113,7 @@ app.get("*", (req, res) => {
 
 // Start scheduler
 startWhatsappScheduler();
+startEmailScheduler();
 
 // Start server
 app.listen(PORT, () => {

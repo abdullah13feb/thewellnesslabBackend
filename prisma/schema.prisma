@@ -266,4 +266,31 @@ model WhatsappCampaignRecipient {
   sentAt        DateTime?
 }
 
+model EmailCampaign {
+  id           String                   @id @default(cuid())
+  subject      String
+  htmlTemplate String                   @db.Text
+  status       String                   @default("DRAFT") // DRAFT, SCHEDULED, SENDING, COMPLETED, FAILED
+  scheduledAt  DateTime?
+  timezone     String?
+  totalCount   Int                      @default(0)
+  successCount Int                      @default(0)
+  failCount    Int                      @default(0)
+  recipients   EmailCampaignRecipient[]
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+}
+
+model EmailCampaignRecipient {
+  id            String         @id @default(cuid())
+  campaignId    String
+  campaign      EmailCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  email         String
+  name          String?
+  variables     Json?          // custom variables from CSV
+  status        String         @default("PENDING") // PENDING, SENT, FAILED
+  error         String?
+  sentAt        DateTime?
+}
+
 
