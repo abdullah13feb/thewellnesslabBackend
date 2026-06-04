@@ -127,7 +127,7 @@ router.post('/send-campaign', requireAuth, upload.single('csvFile'), async (req,
                         const htmlToSend = replaceVariables(htmlTemplate, recipient);
                         
                         await transporter.sendMail({
-                            from: process.env.MARKETING_EMAIL_USER || '"The Wellness Lab" <marketing@thewellnesslab.ae>',
+                            from: `"Thewellnesslab Team" <${process.env.MARKETING_EMAIL_USER || 'marketing@thewellnesslab.ae'}>`,
                             to: recipientEmail,
                             subject: subject,
                             html: htmlToSend,
