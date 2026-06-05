@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { rescheduleJob } from '../services/scheduler';
-import { runScrapingJob } from '../services/scrapingService';
+import { rescheduleJob } from '../services/scheduler.js';
+import { runScrapingJob } from '../services/scrapingService.js';
 
 const router = Router();
 const prisma = new PrismaClient();

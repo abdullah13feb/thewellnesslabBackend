@@ -1,6 +1,6 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { PrismaClient } from '@prisma/client';
-import { runScrapingJob } from './scrapingService';
+import { runScrapingJob } from './scrapingService.js';
 
 const prisma = new PrismaClient();
 let currentTask: ScheduledTask | null = null;
