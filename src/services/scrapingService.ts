@@ -37,8 +37,8 @@ const runApifyScraping = async (config: any) => {
   console.log('Triggering Apify Google Maps Scraper Actor...');
   
   // Here we would use axios to call the Apify API
-  // Example for calling the "compass/google-maps-scraper" actor:
-  // const response = await axios.post(`https://api.apify.com/v2/acts/compass~google-maps-scraper/runs?token=${config.apifyToken}`, {
+  // Example for calling the "compass/crawler-google-places" actor:
+  // const response = await axios.post(`https://api.apify.com/v2/acts/compass~crawler-google-places/runs?token=${config.apifyToken}`, {
   //   searchStringsArray: [config.searchQuery || 'restaurants'],
   //   maxCrawledPlacesPerSearch: 10,
   //   language: 'en',

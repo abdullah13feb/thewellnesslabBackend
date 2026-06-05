@@ -74,7 +74,7 @@ export class VisitSchedulerService {
       // For immediate UI responses, you would typically spawn a background task and return a "Job ID" to the UI.
       // Below is the theoretical synchronous execution or webhook trigger structure.
       try {
-         // const response = await axios.post(`https://api.apify.com/v2/acts/compass~google-maps-scraper/runs?token=${apifyKey}`, {
+         // const response = await axios.post(`https://api.apify.com/v2/acts/compass~crawler-google-places/runs?token=${apifyKey}`, {
          //   searchStringsArray: [query],
          //   maxCrawledPlacesPerSearch: maxVisits * 2,
          //   language: 'en',
