@@ -96,7 +96,9 @@ router.post('/schedules/:id/send-whatsapp', async (req, res) => {
       where: { id },
       include: {
         salesperson: true,
-        visits: true
+        visits: {
+          include: { business: true }
+        }
       }
     });
 
