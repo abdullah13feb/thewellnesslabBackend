@@ -293,4 +293,60 @@ model EmailCampaignRecipient {
   sentAt        DateTime?
 }
 
+model VisitBusiness {
+  id              String   @id @default(cuid())
+  placeId         String   @unique
+  name            String
+  address         String?
+  latitude        Float?
+  longitude       Float?
+  phone           String?
+  website         String?
+  rating          Float?
+  reviewCount     Int?
+  openingHours    Json?
+  category        String?
+  visits          Visit[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
 
+model Salesperson {
+  id             String          @id @default(cuid())
+  name           String
+  whatsappNumber String
+  isActive       Boolean         @default(true)
+  schedules      VisitSchedule[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model VisitSchedule {
+  id              String   @id @default(cuid())
+  date            DateTime
+  salespersonId   String?
+  salesperson     Salesperson? @relation(fields: [salespersonId], references: [id], onDelete: SetNull)
+  startLocation   String?
+  endLocation     String?
+  visits          Visit[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Visit {
+  id              String   @id @default(cuid())
+  scheduleId      String
+  schedule        VisitSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  businessId      String
+  business        VisitBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orderIndex      Int
+  plannedTime     String?
+  status          String   @default("PLANNED")
+  checklistBefore Json?
+  checklistDuring Json?
+  checklistAfter  Json?
+  notes           String?
+  interestLevel   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

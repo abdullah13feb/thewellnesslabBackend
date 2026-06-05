@@ -17,6 +17,8 @@ import leadRoutes from "./routes/leads.js";
 import najahRoutes from "./najah/najah.routes.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import marketingRoutes from "./routes/marketing.js";
+import visitsRoutes from "./routes/visits.js";
+import salespersonsRoutes from "./routes/salespersons.js";
 import { startWhatsappScheduler } from "./lib/whatsappScheduler.js";
 import { startEmailScheduler } from "./services/emailScheduler.js";
 
@@ -81,6 +83,8 @@ app.use("/api/leads", leadRoutes);
 app.use("/api/najah", najahRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/marketing", marketingRoutes);
+app.use("/api/visits", visitsRoutes);
+app.use("/api/salespersons", salespersonsRoutes);
 
 // Health check
 app.get("/health", (req, res) => {

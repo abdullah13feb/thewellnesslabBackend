@@ -21,6 +21,7 @@
     "@clerk/clerk-sdk-node": "^4.13.23",
     "@prisma/client": "^5.7.1",
     "@types/multer": "^2.0.0",
+    "axios": "^1.17.0",
     "cloudinary": "^1.41.3",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.1",
