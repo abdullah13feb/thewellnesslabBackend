@@ -306,6 +306,13 @@ model VisitBusiness {
   reviewCount     Int?
   openingHours    Json?
   category        String?
+  
+  // Pre-Qualification AI Fields
+  score           Int?
+  tier            String?
+  rltStatus       String?
+  aiJustification String?
+
   visits          Visit[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

@@ -104,13 +104,7 @@ router.post('/schedules/:id/send-whatsapp', async (req, res) => {
       return res.status(400).json({ error: 'Salesperson or WhatsApp number not found for this schedule.' });
     }
 
-    const waypoints = schedule.visits.map((v: any) => encodeURIComponent(v.business.address || `${v.business.latitude},${v.business.longitude}` || v.business.name)).join('|');
-    const startLoc = encodeURIComponent(schedule.startLocation || 'Dubai');
-    const endLoc = encodeURIComponent(schedule.endLocation || schedule.startLocation || 'Dubai');
-    
-    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${startLoc}&destination=${endLoc}&waypoints=${waypoints}`;
-    
-    const message = `Hello ${schedule.salesperson.name}!\n\nYour field visit route for ${schedule.date.toDateString()} is ready. You have ${schedule.visits.length} visits.\n\nClick the link below to open your route in Google Maps:\n\n${mapsUrl}`;
+    const message = VisitSchedulerService.generateRichWhatsappMessage(schedule, schedule.visits, schedule.salesperson);
 
     const success = await sendWhatsappMessage("default", schedule.salesperson.whatsappNumber, message);
     
