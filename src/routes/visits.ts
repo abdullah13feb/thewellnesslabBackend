@@ -104,8 +104,13 @@ router.post('/schedules/:id/send-whatsapp', async (req, res) => {
       return res.status(400).json({ error: 'Salesperson or WhatsApp number not found for this schedule.' });
     }
 
-    const portalUrl = process.env.FRONTEND_URL || "https://admin.thewellnesslab.ae";
-    const message = `Hello ${schedule.salesperson.name}!\n\nYour field visit route for ${schedule.date.toDateString()} is ready. You have ${schedule.visits.length} visits.\n\nClick here to view your schedule: ${portalUrl}/admin/visits`;
+    const waypoints = schedule.visits.map((v: any) => encodeURIComponent(v.business.address || `${v.business.latitude},${v.business.longitude}` || v.business.name)).join('|');
+    const startLoc = encodeURIComponent(schedule.startLocation || 'Dubai');
+    const endLoc = encodeURIComponent(schedule.endLocation || schedule.startLocation || 'Dubai');
+    
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${startLoc}&destination=${endLoc}&waypoints=${waypoints}`;
+    
+    const message = `Hello ${schedule.salesperson.name}!\n\nYour field visit route for ${schedule.date.toDateString()} is ready. You have ${schedule.visits.length} visits.\n\nClick the link below to open your route in Google Maps:\n\n${mapsUrl}`;
 
     const success = await sendWhatsappMessage("default", schedule.salesperson.whatsappNumber, message);
     
@@ -117,6 +122,53 @@ router.post('/schedules/:id/send-whatsapp', async (req, res) => {
   } catch (error: any) {
     console.error('Failed to send manual WhatsApp itinerary:', error);
     res.status(500).json({ error: error.message || 'Failed to send WhatsApp message. Make sure the gateway is connected.' });
+  }
+});
+
+// GET /api/visits/weekly-config
+router.get('/weekly-config', async (req, res) => {
+  try {
+    const configs = await prisma.weeklyVisitConfig.findMany({
+      orderBy: { dayOfWeek: 'asc' }
+    });
+    res.json({ configs });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// POST /api/visits/weekly-config
+router.post('/weekly-config', async (req, res) => {
+  try {
+    const { configs } = req.body;
+    
+    if (!Array.isArray(configs)) {
+      return res.status(400).json({ error: 'Configs must be an array' });
+    }
+
+    // Since we want to overwrite existing configs, we can just clear them all and recreate
+    await prisma.weeklyVisitConfig.deleteMany();
+    
+    if (configs.length > 0) {
+      await prisma.weeklyVisitConfig.createMany({
+        data: configs.map(c => ({
+          dayOfWeek: c.dayOfWeek,
+          targetLocation: c.targetLocation,
+          categories: c.categories,
+          startLocation: c.startLocation || null,
+          endLocation: c.endLocation || null,
+          maxVisits: c.maxVisits || 5,
+          salespersonIds: c.salespersonIds || [],
+          runTime: c.runTime || "00:00",
+          isActive: c.isActive !== undefined ? c.isActive : true
+        }))
+      });
+    }
+
+    res.json({ success: true, message: 'Weekly configuration saved!' });
+  } catch (error: any) {
+    console.error('Failed to save weekly config:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 

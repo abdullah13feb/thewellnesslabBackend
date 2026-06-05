@@ -23,6 +23,7 @@ import { startWhatsappScheduler } from "./lib/whatsappScheduler.js";
 import { startEmailScheduler } from "./services/emailScheduler.js";
 import scrapingRoutes from "./routes/scraping.js";
 import { initScheduler } from "./services/scheduler.js";
+import { initWeeklyScheduler } from "./services/weekly-scheduler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -122,6 +123,7 @@ app.get("*", (req, res) => {
 startWhatsappScheduler();
 startEmailScheduler();
 initScheduler();
+initWeeklyScheduler();
 
 // Start server
 app.listen(PORT, () => {

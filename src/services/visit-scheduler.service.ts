@@ -187,8 +187,13 @@ export class VisitSchedulerService {
       });
 
       if (salesperson && salesperson.whatsappNumber) {
-        const portalUrl = process.env.FRONTEND_URL || "https://admin.thewellnesslab.ae";
-        const message = `Hello ${salesperson.name}!\n\nYour field visit route for today is ready. You have ${visits.length} visits starting at 09:00 AM.\n\nClick here to view your schedule and start your visits: ${portalUrl}/admin/visits`;
+        const waypoints = visits.map((v: any) => encodeURIComponent(v.business.address || `${v.business.latitude},${v.business.longitude}` || v.business.name)).join('|');
+        const startLoc = encodeURIComponent(data.startLocation || 'Dubai');
+        const endLoc = encodeURIComponent(data.endLocation || data.startLocation || 'Dubai');
+        
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${startLoc}&destination=${endLoc}&waypoints=${waypoints}`;
+        
+        const message = `Hello ${salesperson.name}!\n\nYour field visit route for today is ready. You have ${visits.length} visits starting at 09:00 AM.\n\nClick the link below to open your route in Google Maps:\n\n${mapsUrl}`;
 
         // Use the default session to send the message
         await sendWhatsappMessage("default", salesperson.whatsappNumber, message);
