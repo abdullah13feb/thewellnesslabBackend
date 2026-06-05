@@ -1,9 +1,9 @@
-import cron from 'node-cron';
+import cron, { ScheduledTask } from 'node-cron';
 import { PrismaClient } from '@prisma/client';
 import { runScrapingJob } from './scrapingService';
 
 const prisma = new PrismaClient();
-let currentTask: cron.ScheduledTask | null = null;
+let currentTask: ScheduledTask | null = null;
 
 export const initScheduler = async () => {
   console.log('Initializing Scraping Scheduler...');
