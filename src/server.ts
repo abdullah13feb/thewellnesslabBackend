@@ -21,6 +21,8 @@ import visitsRoutes from "./routes/visits.js";
 import salespersonsRoutes from "./routes/salespersons.js";
 import { startWhatsappScheduler } from "./lib/whatsappScheduler.js";
 import { startEmailScheduler } from "./services/emailScheduler.js";
+import scrapingRoutes from "./routes/scraping.js";
+import { initScheduler } from "./services/scheduler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -85,6 +87,7 @@ app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/marketing", marketingRoutes);
 app.use("/api/visits", visitsRoutes);
 app.use("/api/salespersons", salespersonsRoutes);
+app.use("/api/admin/scraping", scrapingRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
@@ -118,6 +121,7 @@ app.get("*", (req, res) => {
 // Start scheduler
 startWhatsappScheduler();
 startEmailScheduler();
+initScheduler();
 
 // Start server
 app.listen(PORT, () => {

@@ -350,3 +350,15 @@ model Visit {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+model ScrapingConfig {
+  id               String   @id @default(cuid())
+  provider         String   @default("GOOGLE_MAPS") // "APIFY" or "GOOGLE_MAPS"
+  scheduleCron     String   @default("0 0 * * *")   // Daily at midnight
+  apifyToken       String?
+  googleMapsApiKey String?
+  isActive         Boolean  @default(false)
+  searchQuery      String?  // e.g. "Spas in Dubai"
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

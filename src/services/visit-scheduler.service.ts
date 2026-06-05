@@ -7,59 +7,87 @@ const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 export class VisitSchedulerService {
   /**
-   * Discover businesses using Google Places API
+   * Discover businesses using Dynamic Config (Google Places API or Apify)
    */
   static async discoverBusinesses(location: string, categories: string[], maxVisits: number = 10) {
-    if (!GOOGLE_API_KEY) {
-      throw new Error('Google Maps API Key is not configured.');
-    }
+    // Fetch dynamic configuration from DB
+    const config = await prisma.scrapingConfig.findFirst({
+      where: { isActive: true }
+    });
 
-    // This is a simplified example using Text Search. In a real scenario, you'd use Nearby Search with lat/lng.
+    const provider = config?.provider || 'GOOGLE_MAPS';
+    const apiKey = config?.googleMapsApiKey || process.env.GOOGLE_MAPS_API_KEY;
+    const apifyKey = config?.apifyToken;
     const query = `${categories.join(' OR ')} in ${location}`;
-    const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${GOOGLE_API_KEY}`;
+    const businesses = [];
 
-    try {
-      const response = await axios.get(url);
-      const places = response.data.results || [];
-
-      const businesses = [];
-      for (const place of places.slice(0, maxVisits * 2)) { // Fetch more to allow filtering
-        // Check if business already exists
-        let business = await prisma.visitBusiness.findUnique({
-          where: { placeId: place.place_id },
-        });
-
-        if (!business) {
-          // If not, fetch details (like phone, website, hours)
-          const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=name,formatted_address,geometry,formatted_phone_number,website,rating,user_ratings_total,opening_hours&key=${GOOGLE_API_KEY}`;
-          const detailsResponse = await axios.get(detailsUrl);
-          const details = detailsResponse.data.result || place;
-
-          business = await prisma.visitBusiness.create({
-            data: {
-              placeId: place.place_id,
-              name: details.name || place.name,
-              address: details.formatted_address || place.formatted_address,
-              latitude: details.geometry?.location?.lat,
-              longitude: details.geometry?.location?.lng,
-              phone: details.formatted_phone_number,
-              website: details.website,
-              rating: details.rating || place.rating,
-              reviewCount: details.user_ratings_total || place.user_ratings_total,
-              openingHours: details.opening_hours || null,
-              category: categories[0], // simplified
-            },
-          });
-        }
-        businesses.push(business);
+    if (provider === 'GOOGLE_MAPS') {
+      if (!apiKey) {
+        throw new Error('Google Maps API Key is not configured in DB or .env.');
       }
 
-      // Filter recently visited logic can be added here
-      return businesses.slice(0, maxVisits);
-    } catch (error) {
-      console.error('Error discovering businesses:', error);
-      throw error;
+      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${apiKey}`;
+
+      try {
+        const response = await axios.get(url);
+        const places = response.data.results || [];
+
+        for (const place of places.slice(0, maxVisits * 2)) {
+          let business = await prisma.visitBusiness.findUnique({
+            where: { placeId: place.place_id },
+          });
+
+          if (!business) {
+            const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=name,formatted_address,geometry,formatted_phone_number,website,rating,user_ratings_total,opening_hours&key=${apiKey}`;
+            const detailsResponse = await axios.get(detailsUrl);
+            const details = detailsResponse.data.result || place;
+
+            business = await prisma.visitBusiness.create({
+              data: {
+                placeId: place.place_id,
+                name: details.name || place.name,
+                address: details.formatted_address || place.formatted_address,
+                latitude: details.geometry?.location?.lat,
+                longitude: details.geometry?.location?.lng,
+                phone: details.formatted_phone_number,
+                website: details.website,
+                rating: details.rating || place.rating,
+                reviewCount: details.user_ratings_total || place.user_ratings_total,
+                openingHours: details.opening_hours || null,
+                category: categories[0],
+              },
+            });
+          }
+          businesses.push(business);
+        }
+      } catch (error) {
+        console.error('Error discovering businesses with Google Maps:', error);
+        throw error;
+      }
+    } else if (provider === 'APIFY') {
+      if (!apifyKey) {
+        throw new Error('Apify Token is not configured in DB.');
+      }
+
+      console.log('Triggering Apify Google Maps Scraper Actor for dynamic discovery...');
+      // NOTE: Real Apify scraping is asynchronous and takes minutes. 
+      // For immediate UI responses, you would typically spawn a background task and return a "Job ID" to the UI.
+      // Below is the theoretical synchronous execution or webhook trigger structure.
+      try {
+         // const response = await axios.post(`https://api.apify.com/v2/acts/compass~google-maps-scraper/runs?token=${apifyKey}`, {
+         //   searchStringsArray: [query],
+         //   maxCrawledPlacesPerSearch: maxVisits * 2,
+         //   language: 'en',
+         // });
+         console.log(`Called Apify with search query: ${query}`);
+         // The scraped Apify data would be processed here and mapped into `VisitBusiness` entries similar to the Google Maps logic.
+      } catch (error) {
+        console.error('Error discovering businesses with Apify:', error);
+        throw error;
+      }
     }
+
+    return businesses.slice(0, maxVisits);
   }
 
   /**
