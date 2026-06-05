@@ -69,18 +69,45 @@ export class VisitSchedulerService {
         throw new Error('Apify Token is not configured in DB.');
       }
 
-      console.log('Triggering Apify Google Maps Scraper Actor for dynamic discovery...');
-      // NOTE: Real Apify scraping is asynchronous and takes minutes. 
-      // For immediate UI responses, you would typically spawn a background task and return a "Job ID" to the UI.
-      // Below is the theoretical synchronous execution or webhook trigger structure.
+      console.log('Triggering Apify Google Maps Scraper Actor synchronously for a test...');
+      
       try {
-         // const response = await axios.post(`https://api.apify.com/v2/acts/compass~crawler-google-places/runs?token=${apifyKey}`, {
-         //   searchStringsArray: [query],
-         //   maxCrawledPlacesPerSearch: maxVisits * 2,
-         //   language: 'en',
-         // });
-         console.log(`Called Apify with search query: ${query}`);
-         // The scraped Apify data would be processed here and mapped into `VisitBusiness` entries similar to the Google Maps logic.
+         // Use run-sync-get-dataset-items to force the backend to wait for the results
+         const response = await axios.post(`https://api.apify.com/v2/acts/compass~crawler-google-places/run-sync-get-dataset-items?token=${apifyKey}`, {
+           searchStringsArray: [query],
+           maxCrawledPlacesPerSearch: maxVisits * 2,
+           language: 'en',
+         });
+         
+         console.log(`Apify completed. Fetched items count: ${response.data.length}`);
+         const places = response.data || [];
+
+         for (const place of places) {
+           if (!place.placeId) continue;
+           
+           let business = await prisma.visitBusiness.findUnique({
+             where: { placeId: place.placeId },
+           });
+
+           if (!business) {
+             business = await prisma.visitBusiness.create({
+               data: {
+                 placeId: place.placeId,
+                 name: place.title || place.name || "Unknown",
+                 address: place.address || null,
+                 latitude: place.location?.lat || null,
+                 longitude: place.location?.lng || null,
+                 phone: place.phoneUnformatted || place.phone || null,
+                 website: place.website || null,
+                 rating: place.totalScore || null,
+                 reviewCount: place.reviewsCount || 0,
+                 openingHours: place.openingHours || null,
+                 category: place.categoryName || categories[0],
+               },
+             });
+           }
+           businesses.push(business);
+         }
       } catch (error) {
         console.error('Error discovering businesses with Apify:', error);
         throw error;
