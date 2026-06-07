@@ -91,7 +91,7 @@ export class EmailCampaignService {
       }
 
       // 1. Inject Open Tracking Pixel
-      const baseUrl = process.env.VITE_API_URL || 'http://localhost:5000/api';
+      const baseUrl = process.env.API_URL || 'https://api.thewellnesslab.ae/api';
       const openTracker = `<img src="${baseUrl}/tracking/open/${recipient.id}" width="1" height="1" style="display:none;" />`;
       if (finalHtml.includes('</body>')) {
         finalHtml = finalHtml.replace('</body>', `${openTracker}</body>`);
