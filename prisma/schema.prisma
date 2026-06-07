@@ -266,6 +266,29 @@ model WhatsappCampaignRecipient {
   sentAt        DateTime?
 }
 
+model EmailSenderAccount {
+  id        String   @id @default(cuid())
+  name      String   // e.g. "Sales 1"
+  email     String   @unique
+  password  String   // App password
+  smtpHost  String   @default("smtp.gmail.com")
+  smtpPort  Int      @default(465)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sentEmails EmailCampaignRecipient[]
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  subject   String?
+  html      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model EmailCampaign {
   id           String                   @id @default(cuid())
   subject      String
@@ -276,6 +299,8 @@ model EmailCampaign {
   totalCount   Int                      @default(0)
   successCount Int                      @default(0)
   failCount    Int                      @default(0)
+  openCount    Int                      @default(0)
+  clickCount   Int                      @default(0)
   recipients   EmailCampaignRecipient[]
   createdAt    DateTime                 @default(now())
   updatedAt    DateTime                 @updatedAt
@@ -285,12 +310,18 @@ model EmailCampaignRecipient {
   id            String         @id @default(cuid())
   campaignId    String
   campaign      EmailCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  senderAccountId String?
+  senderAccount   EmailSenderAccount? @relation(fields: [senderAccountId], references: [id], onDelete: SetNull)
+  
   email         String
   name          String?
   variables     Json?          // custom variables from CSV
   status        String         @default("PENDING") // PENDING, SENT, FAILED
   error         String?
   sentAt        DateTime?
+  openedAt      DateTime?
+  clickedAt     DateTime?
 }
 
 model VisitBusiness {

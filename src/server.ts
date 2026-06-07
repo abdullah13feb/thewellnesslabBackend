@@ -24,6 +24,10 @@ import { startEmailScheduler } from "./services/emailScheduler.js";
 import scrapingRoutes from "./routes/scraping.js";
 import { initScheduler } from "./services/scheduler.js";
 import { initWeeklyScheduler } from "./services/weekly-scheduler.js";
+import emailSenderRoutes from "./routes/email-senders.js";
+import emailCampaignRoutes from "./routes/email-campaigns.js";
+import emailTemplateRoutes from "./routes/email-templates.js";
+import emailTrackingRoutes from "./routes/email-tracking.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -89,6 +93,10 @@ app.use("/api/marketing", marketingRoutes);
 app.use("/api/visits", visitsRoutes);
 app.use("/api/salespersons", salespersonsRoutes);
 app.use("/api/admin/scraping", scrapingRoutes);
+app.use("/api/email-senders", emailSenderRoutes);
+app.use("/api/email-campaigns", emailCampaignRoutes);
+app.use("/api/email-templates", emailTemplateRoutes);
+app.use("/api/tracking", emailTrackingRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
