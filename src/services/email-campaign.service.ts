@@ -72,10 +72,8 @@ export class EmailCampaignService {
     let successCount = campaign.successCount;
     let failCount = campaign.failCount;
 
-    // Send emails in a round-robin fashion
-    // For large lists, this should ideally be handled by a queue (like BullMQ), 
-    // but for simple cases, we can process them asynchronously here.
-    const promises = campaign.recipients.map(async (recipient, index) => {
+    // Process a single recipient
+    const processRecipient = async (recipient: any, index: number) => {
       // Determine which sender to use (Round Robin)
       const senderIndex = index % transporters.length;
       const { sender, transporter } = transporters[senderIndex];
@@ -100,7 +98,6 @@ export class EmailCampaignService {
       }
 
       // 2. Rewrite Links for Click Tracking
-      // Find all href="http..." and replace with href="http://localhost:5000/api/tracking/click/recipientId?url=http..."
       finalHtml = finalHtml.replace(/href=["'](https?:\/\/[^"']+)["']/g, (match, url) => {
         // Don't rewrite if it's already a tracking URL
         if (url.includes('/api/tracking/')) return match;
@@ -140,11 +137,22 @@ export class EmailCampaignService {
         });
         failCount++;
       }
-    });
+    };
 
-    // Wait for all to finish (In production with 10k emails, chunk this using Promise.allSettled on batches)
-    // Here we batch them simply by awaiting all.
-    await Promise.allSettled(promises);
+    // Send emails in batches of 50 to prevent SMTP blocking and RAM spikes
+    const batchSize = 50;
+    for (let i = 0; i < campaign.recipients.length; i += batchSize) {
+      const batch = campaign.recipients.slice(i, i + batchSize);
+      
+      await Promise.allSettled(
+        batch.map((recipient, idx) => processRecipient(recipient, i + idx))
+      );
+
+      // Add a 10 second pause between batches to respect rate limits (skip pause on final batch)
+      if (i + batchSize < campaign.recipients.length) {
+        await new Promise(resolve => setTimeout(resolve, 10000));
+      }
+    }
 
     // Update final campaign status
     await prisma.emailCampaign.update({

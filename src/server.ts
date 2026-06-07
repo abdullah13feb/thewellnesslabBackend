@@ -28,6 +28,7 @@ import emailSenderRoutes from "./routes/email-senders.js";
 import emailCampaignRoutes from "./routes/email-campaigns.js";
 import emailTemplateRoutes from "./routes/email-templates.js";
 import emailTrackingRoutes from "./routes/email-tracking.js";
+import { startReplyTracker } from "./services/reply-tracker.service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -132,6 +133,7 @@ startWhatsappScheduler();
 startEmailScheduler();
 initScheduler();
 initWeeklyScheduler();
+startReplyTracker();
 
 // Start server
 app.listen(PORT, () => {

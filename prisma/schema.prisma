@@ -273,6 +273,8 @@ model EmailSenderAccount {
   password  String   // App password
   smtpHost  String   @default("smtp.gmail.com")
   smtpPort  Int      @default(465)
+  imapHost  String   @default("imap.gmail.com")
+  imapPort  Int      @default(993)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -301,6 +303,7 @@ model EmailCampaign {
   failCount    Int                      @default(0)
   openCount    Int                      @default(0)
   clickCount   Int                      @default(0)
+  replyCount   Int                      @default(0)
   recipients   EmailCampaignRecipient[]
   createdAt    DateTime                 @default(now())
   updatedAt    DateTime                 @updatedAt
@@ -322,6 +325,7 @@ model EmailCampaignRecipient {
   sentAt        DateTime?
   openedAt      DateTime?
   clickedAt     DateTime?
+  repliedAt     DateTime?
 }
 
 model VisitBusiness {
