@@ -30,15 +30,15 @@ async function processAccountReplies(account: EmailSenderAccount) {
     try {
       // Search for UNSEEN messages
       // We only want to process new replies
-      const searchCriteria = { unseen: true };
+      const searchCriteria: any = { seen: false };
       const messages = await client.search(searchCriteria);
 
-      if (messages.length > 0) {
+      if (messages && messages.length > 0) {
         console.log(`[Reply Tracker] Found ${messages.length} unseen messages for ${account.email}`);
 
         // Fetch envelopes to get sender email
-        for await (const msg of client.fetch(messages, { envelope: true })) {
-          const fromAddress = msg.envelope.from?.[0]?.address;
+        for await (const msg of client.fetch(messages as number[], { envelope: true })) {
+          const fromAddress = msg.envelope?.from?.[0]?.address;
 
           if (fromAddress) {
             console.log(`[Reply Tracker] Processing email from ${fromAddress}`);
