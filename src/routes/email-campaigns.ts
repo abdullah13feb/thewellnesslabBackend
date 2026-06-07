@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { emailCampaignService } from '../services/email-campaign.service';
+import { emailCampaignService } from '../services/email-campaign.service.js';
 import { PrismaClient } from '@prisma/client';
 
 const router = Router();

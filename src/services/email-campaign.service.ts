@@ -1,6 +1,6 @@
 import { PrismaClient, EmailSenderAccount } from '@prisma/client';
 import nodemailer from 'nodemailer';
-import { emailSenderService } from './email-sender.service';
+import { emailSenderService } from './email-sender.service.js';
 
 const prisma = new PrismaClient();
 
