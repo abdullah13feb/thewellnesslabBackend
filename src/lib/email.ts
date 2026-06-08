@@ -159,7 +159,7 @@ export const sendOrderConfirmationEmail = async (order: any) => {
                   <p style="margin: 0; font-size: 12px; color: #4b5563;">Take a quick quiz on what suits your needs.</p>
                 </td>
                 <td align="right" style="padding: 24px;">
-                  <a href="https://thewellnesslab.ae/quiz" style="background-color: #111111; color: #ffffff; padding: 12px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; display: inline-block;">TAKE THE QUIZ</a>
+                  <a href="https://thewellnesslab.ae/quiz" style="background-color: #111111; color: #ffffff; padding: 12px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; display: inline-block;">Find Your Panel</a>
                 </td>
               </tr>
             </table>

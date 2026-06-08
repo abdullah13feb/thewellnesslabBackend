@@ -68,6 +68,33 @@ router.delete("/statuses/:id", requireAuthOrApiKey, requireAdminOrApiKey, async 
 
 // --- Lead Management Routes ---
 
+// Create a lead publicly (e.g., from Quiz)
+router.post("/public", async (req, res) => {
+  try {
+    const { name, phone, email, source, city } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ success: false, error: "Name is required" });
+    }
+
+    const lead = await prisma.lead.create({
+      data: {
+        name,
+        phone,
+        email,
+        source: source || "Quiz",
+        city,
+        status: "NEW",
+      },
+    });
+
+    res.status(201).json({ success: true, data: lead });
+  } catch (error) {
+    console.error("Error creating public lead:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
+
 // Create a lead - Protected by API key (X-API-KEY) or Admin
 router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
