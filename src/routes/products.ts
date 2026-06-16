@@ -92,13 +92,14 @@ router.put("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Reques
     console.log("Update Product Body:", req.body);
     const {
       name, price, description, image, images,
-      category, stock, specs, includes, tag, tagline, trustBadges, faq, comparison
+      category, stock, slug, specs, includes, tag, tagline, trustBadges, faq, comparison
     } = req.body;
 
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name }),
+        ...(slug !== undefined && { slug: slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') }),
         ...(price !== undefined && { price: parseFloat(price) }),
         ...(description && { description }),
         ...(image && { image }),
