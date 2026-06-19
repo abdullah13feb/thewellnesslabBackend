@@ -1,11 +1,21 @@
-import { ClerkExpressRequireAuth, StrictAuthProp } from '@clerk/clerk-sdk-node';
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../lib/prisma.js';
+import jwt from 'jsonwebtoken';
+import { createClient } from '@supabase/supabase-js';
 
-// Extend Express Request to include auth
+// Define the custom Auth structure to maintain compatibility with existing req.auth references
+interface AuthProp {
+  auth?: {
+    userId: string;
+    email?: string;
+    role?: string;
+    sessionClaims?: any;
+  };
+}
+
 declare global {
   namespace Express {
-    interface Request extends StrictAuthProp {
+    interface Request extends AuthProp {
       apiKey?: {
         id: string;
         name: string;
@@ -14,7 +24,78 @@ declare global {
   }
 }
 
-export const requireAuth = ClerkExpressRequireAuth();
+// Lazy initialize supabase client
+let supabaseClientInstance: any = null;
+const getSupabaseClient = () => {
+  if (supabaseClientInstance) return supabaseClientInstance;
+  const supabaseUrl = process.env.SUPABASE_URL || '';
+  // Fallback to SUPABASE_JWT_SECRET since the user has populated it with their service role token
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_JWT_SECRET || '';
+  if (supabaseUrl && supabaseKey) {
+    supabaseClientInstance = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+  }
+  return supabaseClientInstance;
+};
+
+// Supabase JWT Verification middleware
+export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.header('Authorization');
+  if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+    return res.status(401).json({ error: "Unauthorized: Missing or invalid token format" });
+  }
+
+  const token = authHeader.slice(7).trim();
+  const jwtSecret = process.env.SUPABASE_JWT_SECRET;
+
+  if (!jwtSecret) {
+    console.error("SUPABASE_JWT_SECRET is not configured in environment variables.");
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+
+  // 1. Try local verification (requires raw JWT secret)
+  try {
+    const decoded = jwt.verify(token, jwtSecret) as any;
+    
+    const role = decoded.app_metadata?.role || decoded.user_metadata?.role || decoded.role || 'USER';
+
+    req.auth = {
+      userId: decoded.sub,
+      email: decoded.email,
+      role: role,
+      sessionClaims: decoded
+    };
+    
+    return next();
+  } catch (error) {
+    // 2. Fallback: call Supabase auth API to verify the token
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (user && !authError) {
+          const role = user.app_metadata?.role || user.user_metadata?.role || 'USER';
+          req.auth = {
+            userId: user.id,
+            email: user.email,
+            role: role,
+            sessionClaims: user
+          };
+          return next();
+        }
+      } catch (fallbackError) {
+        console.error("Supabase API verification fallback failed:", fallbackError);
+      }
+    }
+
+    console.error("Supabase JWT validation failed:", error);
+    return res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
+  }
+};
 
 const getApiKeyFromRequest = (req: Request) => {
   const xApiKey = req.header('x-api-key');
@@ -83,53 +164,34 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
       return next();
     }
 
-    // Fallback: Check Clerk Session Claims (if metadata is in JWT)
-    // Note: You must configure Clerk "Session token" in dashboard to include public_metadata
-    // If not configured, this might be undefined.
-    // However, for immediate user fix if they manually edited metadata:
-    const claims = (req.auth as any).sessionClaims;
-    const clerkRole = claims?.public_metadata?.role || claims?.metadata?.role;
+    // Fallback: Check Supabase Session Claims
+    const claims = req.auth.sessionClaims;
+    const role = claims?.app_metadata?.role || claims?.user_metadata?.role || claims?.role;
 
-    if (clerkRole === 'ADMIN') {
-      // Optional: Sync back to Prisma?
+    if (role === 'ADMIN') {
+      // Sync back to Prisma
       if (user && user.role !== 'ADMIN') {
         await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } });
-      }
-      return next();
-    }
-
-    // Fallback 2: Fetch fresh data from Clerk API (Slow but reliable if token is stale)
-    // Import clerkClient dynamically to avoid top-level await issues if any, or just trust imports.
-    // We needed to add import at top. But since I am editing the function, I'll add the logic here.
-
-    try {
-      // We can iterate on this file to add the import at the top in a separate step or just assume it is available?
-      // The user prompt shows I can edit the file.
-      // I'll add the check here.
-      const { clerkClient } = await import('@clerk/clerk-sdk-node');
-      const clerkUser = await clerkClient.users.getUser(req.auth.userId);
-      const metaRole = clerkUser.publicMetadata?.role;
-
-      if (metaRole === 'ADMIN') {
-        // Sync to Prisma
-        if (user) {
-          await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } });
+      } else if (!user) {
+        const userEmail = req.auth.email || "";
+        const existingUser = userEmail ? await prisma.user.findUnique({ where: { email: userEmail } }) : null;
+        if (existingUser) {
+          await prisma.user.update({
+            where: { id: existingUser.id },
+            data: { id: req.auth.userId, role: 'ADMIN' }
+          });
         } else {
-          // Create if missing?
           await prisma.user.create({
             data: {
               id: req.auth.userId,
-              email: clerkUser.emailAddresses[0]?.emailAddress || "",
+              email: userEmail,
               role: 'ADMIN'
             }
           });
-          // Also cart
           await prisma.cart.create({ data: { userId: req.auth.userId } });
         }
-        return next();
       }
-    } catch (err) {
-      console.error("Clerk API fallback failed", err);
+      return next();
     }
 
     return res.status(403).json({ error: "Forbidden: Admin access required" });
@@ -150,8 +212,6 @@ export const requireAdminOrApiKey = async (req: Request, res: Response, next: Ne
       return next();
     }
 
-    // If no API key, we must ensure Clerk auth is checked first
-    // requireAuth will populate req.auth, then we call requireAdmin
     return requireAuth(req, res, () => requireAdmin(req, res, next));
   } catch (error) {
     console.error("Admin or API key check error:", error);

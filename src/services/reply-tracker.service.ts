@@ -23,6 +23,11 @@ async function processAccountReplies(account: EmailSenderAccount) {
       logger: false // Disable verbose logging
     });
 
+    // Register error handler to catch async/connection issues and prevent process crash
+    client.on('error', (err) => {
+      console.error(`[Reply Tracker] ImapFlow connection error for ${account.email}:`, err);
+    });
+
     await client.connect();
 
     // Select the inbox

@@ -1,33 +1,66 @@
 import express from 'express';
 import prisma from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
+import { createClient } from '@supabase/supabase-js';
 
 const router = express.Router();
 
-// Sync user from Clerk to Prisma
+// Helper to get Supabase Admin client
+const getSupabaseAdmin = () => {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (supabaseUrl && serviceRoleKey) {
+        return createClient(supabaseUrl, serviceRoleKey, {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        });
+    }
+    return null;
+};
+
+// Sync user from Supabase to Prisma
 router.post('/sync', requireAuth, async (req, res) => {
     try {
-        const { email, firstName, lastName } = req.body;
-        const userId = req.auth.userId!;
+        const { email } = req.body;
+        const userId = req.auth!.userId;
+        const userEmail = email || req.auth!.email;
 
         // Check if user exists
         let user = await prisma.user.findUnique({ where: { id: userId } });
 
         if (!user) {
-            if (!email) {
+            if (!userEmail) {
                 return res.status(400).json({ error: "Email required for initial sync" });
             }
-            // Create user
-            user = await prisma.user.create({
-                data: {
-                    id: userId,
-                    email: email,
-                    role: 'USER', // Default role
-                },
-            });
-            // Also create a Cart
-            await prisma.cart.create({
-                data: { userId: user.id }
+            // Check if there is already a user with this email (e.g. from Clerk)
+            const existingUser = await prisma.user.findUnique({ where: { email: userEmail } });
+            if (existingUser) {
+                user = await prisma.user.update({
+                    where: { id: existingUser.id },
+                    data: { id: userId, role: req.auth!.role === 'ADMIN' ? 'ADMIN' : 'USER' }
+                });
+            } else {
+                // Create user in our DB
+                user = await prisma.user.create({
+                    data: {
+                        id: userId,
+                        email: userEmail,
+                        role: req.auth!.role === 'ADMIN' ? 'ADMIN' : 'USER',
+                    },
+                });
+                // Also create a Cart
+                await prisma.cart.create({
+                    data: { userId: user.id }
+                });
+            }
+        } else if (req.auth!.role === 'ADMIN' && user.role !== 'ADMIN') {
+            // Keep role in sync if token says admin but DB doesn't
+            user = await prisma.user.update({
+                where: { id: userId },
+                data: { role: 'ADMIN' }
             });
         }
 
@@ -49,7 +82,7 @@ router.post('/promote-admin', requireAuth, async (req, res) => {
             return res.status(403).json({ error: "Invalid admin secret" });
         }
 
-        const userId = req.auth.userId!;
+        const userId = req.auth!.userId;
 
         // Update Prisma
         await prisma.user.update({
@@ -57,20 +90,18 @@ router.post('/promote-admin', requireAuth, async (req, res) => {
             data: { role: 'ADMIN' }
         });
 
-        // Update Clerk Metadata
-        // We need to dynamic import or use standard import if available
-        // Assuming @clerk/clerk-sdk-node is available and configured
-
-        try {
-            // ESM import for Clerk
-            const { clerkClient } = await import('@clerk/clerk-sdk-node');
-            await clerkClient.users.updateUser(userId, {
-                publicMetadata: { role: 'ADMIN' }
-            });
-        } catch (err) {
-            console.warn("Failed to update Clerk metadata directly. Ensure API keys are set.", err);
-            // Fallback: We updated Prisma, which is our backend source of truth.
-            // But frontend relies on metadata. User might need to re-login or Token refresh.
+        // Update Supabase User Metadata (requires Admin Client)
+        const supabaseAdmin = getSupabaseAdmin();
+        if (supabaseAdmin) {
+            try {
+                await supabaseAdmin.auth.admin.updateUserById(userId, {
+                    user_metadata: { role: 'ADMIN' }
+                });
+            } catch (err) {
+                console.warn("Failed to update Supabase user metadata via admin client:", err);
+            }
+        } else {
+            console.warn("Supabase Admin Client not initialized. Add SUPABASE_SERVICE_ROLE_KEY to update user metadata.");
         }
 
         res.json({ success: true, message: "User promoted to ADMIN. Please sign out and sign in again to refresh permissions." });

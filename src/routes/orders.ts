@@ -27,7 +27,10 @@ router.get("/", requireAuthOrApiKey, async (req: Request, res: Response<ApiRespo
       });
     }
 
-    const userId = req.auth.userId!;
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Unauthorized: Missing authentication" });
+    }
 
     // Check if admin
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -192,8 +195,12 @@ router.get("/:orderId", requireAuthOrApiKey, async (req: Request, res: Response<
     }
 
     // Check ownership or admin
-    if (order.userId !== req.auth.userId) {
-      const user = await prisma.user.findUnique({ where: { id: req.auth.userId! } });
+    if (!req.auth || order.userId !== req.auth.userId) {
+      const authUserId = req.auth?.userId;
+      if (!authUserId) {
+        return res.status(401).json({ success: false, error: "Unauthorized: Missing authentication" });
+      }
+      const user = await prisma.user.findUnique({ where: { id: authUserId } });
       if (user?.role !== 'ADMIN') {
         return res.status(403).json({ success: false, error: "Unauthorized" });
       }
