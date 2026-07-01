@@ -67,17 +67,36 @@ router.get('/:id', async (req, res) => {
 // Create a new campaign
 router.post('/', async (req, res) => {
   try {
-    const { name, subject, htmlTemplate, recipients, pdfUrl, scheduledAt, timezone, senderAccountIds } = req.body;
+    const { name, subject, htmlTemplate, recipients, pdfUrl, scheduledAt, timezone, senderAccountIds, targetListId } = req.body;
     
-    if (!subject || !htmlTemplate || !recipients || !Array.isArray(recipients) || recipients.length === 0) {
-      return res.status(400).json({ error: 'Subject, htmlTemplate, and recipients array are required' });
+    let finalRecipients = recipients;
+    if (targetListId) {
+      const targetList = await prisma.targetList.findUnique({
+        where: { id: targetListId }
+      });
+      if (!targetList) {
+        return res.status(404).json({ error: 'Target list not found' });
+      }
+
+      const emailsList = targetList.emails as any[];
+      finalRecipients = emailsList
+        .filter((r: any) => r.isValid)
+        .map((r: any) => ({
+          email: r.email,
+          name: r.name || null,
+          variables: r.variables || {}
+        }));
+    }
+
+    if (!subject || !htmlTemplate || !finalRecipients || !Array.isArray(finalRecipients) || finalRecipients.length === 0) {
+      return res.status(400).json({ error: 'Subject, htmlTemplate, and recipients (or valid target list) are required' });
     }
 
     const campaign = await emailCampaignService.createCampaign({ 
       name, 
       subject, 
       htmlTemplate, 
-      recipients, 
+      recipients: finalRecipients, 
       pdfUrl, 
       scheduledAt, 
       timezone,

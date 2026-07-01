@@ -434,3 +434,25 @@ model WeeklyVisitConfig {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+model MediaAsset {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  type      String   // IMAGE, VIDEO, DOCUMENT
+  fileSize  Int?
+  mimeType  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TargetList {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  totalCount   Int      @default(0)
+  validCount   Int      @default(0)
+  invalidCount Int      @default(0)
+  emails       Json     // Array of: { email: string, name?: string, isValid: boolean, variables?: any }
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
