@@ -8,12 +8,18 @@ export class EmailCampaignService {
   /**
    * Create a new email campaign
    */
-  async createCampaign(data: { subject: string; htmlTemplate: string; recipients: { email: string; name?: string; variables?: any }[] }) {
+  async createCampaign(data: { name?: string; subject: string; htmlTemplate: string; pdfUrl?: string; scheduledAt?: string; timezone?: string; senderAccountIds?: string[]; recipients: { email: string; name?: string; variables?: any }[] }) {
+    const status = data.scheduledAt ? 'SCHEDULED' : 'DRAFT';
     return prisma.emailCampaign.create({
       data: {
+        name: data.name || null,
         subject: data.subject,
         htmlTemplate: data.htmlTemplate,
-        status: 'DRAFT',
+        pdfUrl: data.pdfUrl,
+        status: status,
+        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+        timezone: data.timezone || null,
+        senderAccountIds: data.senderAccountIds || [],
         totalCount: data.recipients.length,
         recipients: {
           create: data.recipients.map(r => ({
@@ -44,9 +50,13 @@ export class EmailCampaignService {
     if (campaign.recipients.length === 0) throw new Error('No pending recipients found');
 
     // Fetch active sender accounts
-    const activeSenders = await emailSenderService.getActiveSenders();
+    let activeSenders = await emailSenderService.getActiveSenders();
+    if (campaign.senderAccountIds && campaign.senderAccountIds.length > 0) {
+      activeSenders = activeSenders.filter(sender => campaign.senderAccountIds.includes(sender.id));
+    }
+    
     if (activeSenders.length === 0) {
-      throw new Error('No active email sender accounts configured. Please add an account first.');
+      throw new Error('No active email sender accounts configured for this campaign. Please verify your selected senders.');
     }
 
     // Update campaign status
@@ -71,6 +81,32 @@ export class EmailCampaignService {
 
     let successCount = campaign.successCount;
     let failCount = campaign.failCount;
+    let bounceCount = campaign.bounceCount;
+    let spamCount = campaign.spamCount;
+
+    // Helper to classify sending errors
+    const getSendErrorStatus = (errorMessage: string): 'FAILED' | 'BOUNCED' | 'SPAM' => {
+      const msg = errorMessage.toLowerCase();
+      if (
+        msg.includes('550') || 
+        msg.includes('554') || 
+        msg.includes('5.1.1') || 
+        msg.includes('recipient address rejected') || 
+        msg.includes('user unknown') || 
+        msg.includes('mailbox unavailable') ||
+        msg.includes('does not exist') ||
+        msg.includes('invalid recipient')
+      ) {
+        if (msg.includes('spam') || msg.includes('block') || msg.includes('unsolicited') || msg.includes('policy')) {
+          return 'SPAM';
+        }
+        return 'BOUNCED';
+      }
+      if (msg.includes('spam') || msg.includes('block') || msg.includes('unsolicited') || msg.includes('blacklist')) {
+        return 'SPAM';
+      }
+      return 'FAILED';
+    };
 
     // Process a single recipient
     const processRecipient = async (recipient: any, index: number) => {
@@ -106,12 +142,24 @@ export class EmailCampaignService {
       });
 
       try {
-        await transporter.sendMail({
+        const mailOptions: any = {
           from: `"${sender.name}" <${sender.email}>`,
           to: recipient.email,
           subject: campaign.subject,
           html: finalHtml,
-        });
+        };
+
+        // Attach PDF if provided
+        if (campaign.pdfUrl) {
+          mailOptions.attachments = [
+            {
+              filename: campaign.pdfUrl.split('/').pop() || 'attachment.pdf',
+              path: campaign.pdfUrl,
+            }
+          ];
+        }
+
+        await transporter.sendMail(mailOptions);
 
         // Mark recipient as SENT and record which account sent it
         await prisma.emailCampaignRecipient.update({
@@ -126,16 +174,28 @@ export class EmailCampaignService {
       } catch (error: any) {
         console.error(`Failed to send email to ${recipient.email} via ${sender.email}:`, error);
         
-        // Mark recipient as FAILED
+        const errMessage = error.message || 'Unknown error';
+        const errorStatus = getSendErrorStatus(errMessage);
+
+        // Mark recipient with categorized error status
         await prisma.emailCampaignRecipient.update({
           where: { id: recipient.id },
           data: { 
-            status: 'FAILED', 
-            error: error.message || 'Unknown error',
-            senderAccountId: sender.id
+            status: errorStatus, 
+            error: errMessage,
+            senderAccountId: sender.id,
+            bouncedAt: errorStatus === 'BOUNCED' ? new Date() : null,
+            spamReportedAt: errorStatus === 'SPAM' ? new Date() : null,
           },
         });
-        failCount++;
+
+        if (errorStatus === 'BOUNCED') {
+          bounceCount++;
+        } else if (errorStatus === 'SPAM') {
+          spamCount++;
+        } else {
+          failCount++;
+        }
       }
     };
 
@@ -161,10 +221,12 @@ export class EmailCampaignService {
         status: 'COMPLETED',
         successCount,
         failCount,
+        bounceCount,
+        spamCount,
       },
     });
 
-    return { successCount, failCount, total: campaign.recipients.length };
+    return { successCount, failCount, bounceCount, spamCount, total: campaign.recipients.length };
   }
 }
 

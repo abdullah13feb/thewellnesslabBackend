@@ -5,10 +5,32 @@ import { PrismaClient } from '@prisma/client';
 const router = Router();
 const prisma = new PrismaClient();
 
-// Get all email campaigns
+// Get all email campaigns (with optional filtering)
 router.get('/', async (req, res) => {
   try {
+    const { startDate, endDate, status } = req.query;
+    let whereClause: any = {};
+
+    if (status && status !== 'all') {
+      whereClause.status = status as string;
+    }
+
+    if (startDate || endDate) {
+      whereClause.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate as string);
+        start.setHours(0, 0, 0, 0);
+        whereClause.createdAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        whereClause.createdAt.lte = end;
+      }
+    }
+
     const campaigns = await prisma.emailCampaign.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
@@ -27,7 +49,13 @@ router.get('/:id', async (req, res) => {
   try {
     const campaign = await prisma.emailCampaign.findUnique({
       where: { id: req.params.id },
-      include: { recipients: true }
+      include: {
+        recipients: {
+          include: {
+            senderAccount: true
+          }
+        }
+      }
     });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
     res.json(campaign);
@@ -39,14 +67,27 @@ router.get('/:id', async (req, res) => {
 // Create a new campaign
 router.post('/', async (req, res) => {
   try {
-    const { subject, htmlTemplate, recipients } = req.body;
+    const { name, subject, htmlTemplate, recipients, pdfUrl, scheduledAt, timezone, senderAccountIds } = req.body;
     
     if (!subject || !htmlTemplate || !recipients || !Array.isArray(recipients) || recipients.length === 0) {
       return res.status(400).json({ error: 'Subject, htmlTemplate, and recipients array are required' });
     }
 
-    const campaign = await emailCampaignService.createCampaign({ subject, htmlTemplate, recipients });
-    res.status(201).json({ message: 'Campaign created successfully', id: campaign.id });
+    const campaign = await emailCampaignService.createCampaign({ 
+      name, 
+      subject, 
+      htmlTemplate, 
+      recipients, 
+      pdfUrl, 
+      scheduledAt, 
+      timezone,
+      senderAccountIds
+    });
+    res.status(201).json({ 
+      message: 'Campaign created successfully', 
+      id: campaign.id, 
+      status: campaign.status 
+    });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

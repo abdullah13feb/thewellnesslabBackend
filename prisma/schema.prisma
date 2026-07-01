@@ -294,39 +294,51 @@ model EmailTemplate {
 
 model EmailCampaign {
   id           String                   @id @default(cuid())
+  name         String?
   subject      String
   htmlTemplate String                   @db.Text
+  pdfUrl       String?                  // Stores the PDF attachment URL if provided
   status       String                   @default("DRAFT") // DRAFT, SCHEDULED, SENDING, COMPLETED, FAILED
-  scheduledAt  DateTime?
-  timezone     String?
-  totalCount   Int                      @default(0)
+  scheduledAt      DateTime?
+  timezone         String?
+  senderAccountIds String[]
+  totalCount       Int                      @default(0)
   successCount Int                      @default(0)
   failCount    Int                      @default(0)
   openCount    Int                      @default(0)
   clickCount   Int                      @default(0)
   replyCount   Int                      @default(0)
+  bounceCount  Int                      @default(0) // Track bounced counts
+  spamCount    Int                      @default(0) // Track spam complaint counts
+  desktopCount Int                      @default(0)
+  mobileCount  Int                      @default(0)
+  tabletCount  Int                      @default(0)
+  smartwatchCount Int                   @default(0)
   recipients   EmailCampaignRecipient[]
   createdAt    DateTime                 @default(now())
   updatedAt    DateTime                 @updatedAt
 }
 
 model EmailCampaignRecipient {
-  id            String         @id @default(cuid())
-  campaignId    String
-  campaign      EmailCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id              String         @id @default(cuid())
+  campaignId      String
+  campaign        EmailCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   
   senderAccountId String?
   senderAccount   EmailSenderAccount? @relation(fields: [senderAccountId], references: [id], onDelete: SetNull)
   
-  email         String
-  name          String?
-  variables     Json?          // custom variables from CSV
-  status        String         @default("PENDING") // PENDING, SENT, FAILED
-  error         String?
-  sentAt        DateTime?
-  openedAt      DateTime?
-  clickedAt     DateTime?
-  repliedAt     DateTime?
+  email           String
+  name            String?
+  variables       Json?          // custom variables from CSV
+  status          String         @default("PENDING") // PENDING, SENT, FAILED, BOUNCED, SPAM
+  error           String?
+  sentAt          DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  repliedAt       DateTime?
+  bouncedAt       DateTime?      // Timestamp when bounce occurred
+  spamReportedAt  DateTime?      // Timestamp when spam was reported
+  deviceType      String?        // e.g. "Smartphone", "Device/Laptop", "Tablet", "Smartwatch"
 }
 
 model VisitBusiness {

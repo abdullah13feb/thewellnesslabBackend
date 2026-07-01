@@ -36,12 +36,108 @@ async function processAccountReplies(account: EmailSenderAccount) {
       if (messages && messages.length > 0) {
         console.log(`[Reply Tracker] Found ${messages.length} unseen messages for ${account.email}`);
 
-        // Fetch envelopes to get sender email
-        for await (const msg of client.fetch(messages as number[], { envelope: true })) {
-          const fromAddress = msg.envelope?.from?.[0]?.address;
+        // Fetch envelopes and raw source to parse headers/body
+        for await (const msg of client.fetch(messages as number[], { envelope: true, source: true })) {
+          const fromAddress = msg.envelope?.from?.[0]?.address || '';
+          const subject = msg.envelope?.subject || '';
+          
+          let bodyText = '';
+          try {
+            if (msg.source) {
+              const parsed = await simpleParser(msg.source);
+              bodyText = parsed.text || '';
+            }
+          } catch (parseErr) {
+            console.error('[Reply Tracker] Failed to parse raw email body:', parseErr);
+          }
 
-          if (fromAddress) {
-            console.log(`[Reply Tracker] Processing email from ${fromAddress}`);
+          const combinedContent = (subject + ' ' + bodyText).toLowerCase();
+
+          // Check if this is a bounce notification or a spam complaint
+          const isBounceSender = fromAddress.toLowerCase().includes('mailer-daemon') ||
+                                 fromAddress.toLowerCase().includes('postmaster') ||
+                                 fromAddress.toLowerCase().includes('bounce');
+          
+          const isBounceSubject = combinedContent.includes('delivery failure') ||
+                                  combinedContent.includes('delivery status notification') ||
+                                  combinedContent.includes('undeliverable') ||
+                                  combinedContent.includes('returned mail') ||
+                                  combinedContent.includes('failure notice') ||
+                                  combinedContent.includes('returned to sender');
+
+          const isSpamComplaint = combinedContent.includes('spam complaint') ||
+                                  combinedContent.includes('feedback loop') ||
+                                  combinedContent.includes('unsolicited') ||
+                                  combinedContent.includes('blocked');
+
+          if (isBounceSender || isBounceSubject || isSpamComplaint) {
+            console.log(`[Reply Tracker] Processing bounce/spam email from: ${fromAddress}`);
+
+            // Find all email addresses in the email body to locate which recipient bounced
+            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+            const emailsInBody = bodyText.match(emailRegex) || [];
+            
+            let matchedRecipient = null;
+
+            for (const email of emailsInBody) {
+              if (email.toLowerCase() === account.email.toLowerCase()) continue;
+
+              const rec = await prisma.emailCampaignRecipient.findFirst({
+                where: {
+                  email: email,
+                  status: 'SENT',
+                  senderAccountId: account.id
+                },
+                orderBy: {
+                  sentAt: 'desc'
+                }
+              });
+
+              if (rec) {
+                matchedRecipient = rec;
+                break;
+              }
+            }
+
+            if (matchedRecipient) {
+              if (isSpamComplaint) {
+                console.log(`[Reply Tracker] Spam complaint matched: ${matchedRecipient.email}`);
+                await prisma.$transaction([
+                  prisma.emailCampaignRecipient.update({
+                    where: { id: matchedRecipient.id },
+                    data: { 
+                      status: 'SPAM', 
+                      spamReportedAt: new Date(),
+                      error: 'Spam complaint / block detected via IMAP inbox'
+                    }
+                  }),
+                  prisma.emailCampaign.update({
+                    where: { id: matchedRecipient.campaignId },
+                    data: { spamCount: { increment: 1 } }
+                  })
+                ]);
+              } else {
+                console.log(`[Reply Tracker] Bounce delivery failure matched: ${matchedRecipient.email}`);
+                await prisma.$transaction([
+                  prisma.emailCampaignRecipient.update({
+                    where: { id: matchedRecipient.id },
+                    data: { 
+                      status: 'BOUNCED', 
+                      bouncedAt: new Date(),
+                      error: 'Bounce delivery failure detected via IMAP inbox'
+                    }
+                  }),
+                  prisma.emailCampaign.update({
+                    where: { id: matchedRecipient.campaignId },
+                    data: { bounceCount: { increment: 1 } }
+                  })
+                ]);
+              }
+            } else {
+              console.log(`[Reply Tracker] Bounce/spam sender parsed but no matching recipient found in body`);
+            }
+          } else if (fromAddress) {
+            console.log(`[Reply Tracker] Processing email reply from ${fromAddress}`);
 
             // Find if this person was sent an email recently
             // We order by sentAt DESC to match the most recent campaign sent to them
