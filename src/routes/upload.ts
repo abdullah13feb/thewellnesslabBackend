@@ -58,7 +58,10 @@ const storage = new CloudinaryStorage({
 
         // Using random token to absolutely prevent public_id collisions during parallel uploads
         const uniqueToken = Math.random().toString(36).substring(2, 8);
-        const public_id = `${name}-${Date.now()}-${uniqueToken}`;
+        let public_id = `${name}-${Date.now()}-${uniqueToken}`;
+        if (resource_type === 'raw') {
+            public_id += ext;
+        }
 
         const uploadParams: any = {
             folder,

@@ -151,9 +151,13 @@ export class EmailCampaignService {
 
         // Attach PDF if provided
         if (campaign.pdfUrl) {
+          let filename = campaign.pdfUrl.split('/').pop() || 'attachment.pdf';
+          if (!filename.includes('.')) {
+            filename += '.pdf';
+          }
           mailOptions.attachments = [
             {
-              filename: campaign.pdfUrl.split('/').pop() || 'attachment.pdf',
+              filename,
               path: campaign.pdfUrl,
             }
           ];
