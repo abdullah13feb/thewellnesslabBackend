@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import axios from 'axios';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -23,6 +24,34 @@ function getDeviceField(deviceType: string) {
   return 'desktopCount';
 }
 
+function getClientIp(req: any): string {
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  if (xForwardedFor) {
+    const ips = (xForwardedFor as string).split(',');
+    return ips[0].trim();
+  }
+  return req.socket.remoteAddress || '';
+}
+
+async function lookupLocation(ip: string): Promise<string> {
+  if (!ip || ip === '::1' || ip === '127.0.0.1' || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+    return 'Localhost / Dev';
+  }
+  try {
+    const res = await axios.get(`http://ip-api.com/json/${ip}`, { timeout: 2000 });
+    if (res.data && res.data.status === 'success') {
+      const parts = [];
+      if (res.data.city) parts.push(res.data.city);
+      if (res.data.regionName && res.data.regionName !== res.data.city) parts.push(res.data.regionName);
+      if (res.data.country) parts.push(res.data.country);
+      return parts.join(', ');
+    }
+  } catch (error) {
+    console.error('GeoIP lookup failed for IP:', ip);
+  }
+  return 'Unknown Location';
+}
+
 // Open tracking pixel endpoint
 router.get('/open/:recipientId', async (req, res) => {
   const { recipientId } = req.params;
@@ -37,6 +66,8 @@ router.get('/open/:recipientId', async (req, res) => {
     if (recipient && !recipient.openedAt) {
       const deviceType = detectDeviceType(req.headers['user-agent']);
       const deviceField = getDeviceField(deviceType);
+      const ipAddress = getClientIp(req);
+      const ipLocation = await lookupLocation(ipAddress);
       
       const campaignUpdates: any = { openCount: { increment: 1 } };
       
@@ -50,7 +81,9 @@ router.get('/open/:recipientId', async (req, res) => {
           where: { id: recipientId },
           data: { 
             openedAt: new Date(),
-            ...(!recipient.deviceType && { deviceType }) 
+            ...(!recipient.deviceType && { deviceType }),
+            ipAddress,
+            ipLocation
           }
         }),
         prisma.emailCampaign.update({
@@ -91,6 +124,8 @@ router.get('/click/:recipientId', async (req, res) => {
     if (recipient && !recipient.clickedAt) {
       const deviceType = detectDeviceType(req.headers['user-agent']);
       const deviceField = getDeviceField(deviceType);
+      const ipAddress = getClientIp(req);
+      const ipLocation = await lookupLocation(ipAddress);
       
       const campaignUpdates: any = { clickCount: { increment: 1 } };
       
@@ -103,7 +138,9 @@ router.get('/click/:recipientId', async (req, res) => {
           where: { id: recipientId },
           data: { 
             clickedAt: new Date(),
-            ...(!recipient.deviceType && { deviceType })
+            ...(!recipient.deviceType && { deviceType }),
+            ipAddress,
+            ipLocation
           }
         }),
         prisma.emailCampaign.update({

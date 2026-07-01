@@ -339,6 +339,8 @@ model EmailCampaignRecipient {
   bouncedAt       DateTime?      // Timestamp when bounce occurred
   spamReportedAt  DateTime?      // Timestamp when spam was reported
   deviceType      String?        // e.g. "Smartphone", "Device/Laptop", "Tablet", "Smartwatch"
+  ipAddress       String?
+  ipLocation      String?
 }
 
 model VisitBusiness {
