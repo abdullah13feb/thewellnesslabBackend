@@ -34,25 +34,47 @@ if (missingKeys.length > 0) {
 
 const router = express.Router();
 
-// Configure Cloudinary Storage with high limits and auto type (for video or images)
+// Configure Cloudinary Storage with dynamic resource types (raw for docs/PDFs, video/image for media)
 const storage = new CloudinaryStorage({
     cloudinary,
-    params: {
-        folder: 'radiant-aura',
-        resource_type: 'auto',
-        allowedFormats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm', 'avi', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'],
-        public_id: (req: Request, file: Express.Multer.File) => {
-            const ext = path.extname(file.originalname);
-            const name = path.basename(file.originalname, ext)
-                .replace(/[^a-z0-9]/gi, '-')
-                .replace(/-+/g, '-')
-                .slice(0, 50);
+    params: async (req: Request, file: Express.Multer.File) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        let folder = 'radiant-aura';
+        let resource_type = 'auto';
 
-            // Using random token to absolutely prevent public_id collisions during parallel uploads
-            const uniqueToken = Math.random().toString(36).substring(2, 8);
-            return `${name}-${Date.now()}-${uniqueToken}`;
+        // Direct documents to 'raw' type, videos to 'video', and others (like images) to 'image'
+        if (ext === '.pdf' || ext === '.doc' || ext === '.docx' || ext === '.xls' || ext === '.xlsx' || ext === '.txt') {
+            resource_type = 'raw';
+        } else if (['.mp4', '.mov', '.webm', '.avi'].includes(ext)) {
+            resource_type = 'video';
+        } else {
+            resource_type = 'image';
         }
-    } as any
+
+        const name = path.basename(file.originalname, ext)
+            .replace(/[^a-z0-9]/gi, '-')
+            .replace(/-+/g, '-')
+            .slice(0, 50);
+
+        // Using random token to absolutely prevent public_id collisions during parallel uploads
+        const uniqueToken = Math.random().toString(36).substring(2, 8);
+        const public_id = `${name}-${Date.now()}-${uniqueToken}`;
+
+        const uploadParams: any = {
+            folder,
+            resource_type,
+            public_id
+        };
+
+        // allowedFormats is only valid for image and video types on Cloudinary
+        if (resource_type === 'image') {
+            uploadParams.allowedFormats = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        } else if (resource_type === 'video') {
+            uploadParams.allowedFormats = ['mp4', 'mov', 'webm', 'avi'];
+        }
+
+        return uploadParams;
+    }
 });
 
 const upload = multer({
