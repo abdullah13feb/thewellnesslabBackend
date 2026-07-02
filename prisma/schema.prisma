@@ -314,6 +314,12 @@ model EmailCampaign {
   mobileCount  Int                      @default(0)
   tabletCount  Int                      @default(0)
   smartwatchCount Int                   @default(0)
+  batchSize        Int                      @default(10)
+  recipientDelay   Float                    @default(1.5)  // Delay between individual emails in minutes
+  batchDelay       Float                    @default(15.0) // Delay between batches in minutes
+  thresholdCount   Int                      @default(100)  // Number of emails before threshold delay
+  thresholdDelay   Float                    @default(30.0) // Sleep duration in minutes after thresholdCount
+  percentageDelay  Float                    @default(60.0) // Sleep duration in minutes after 50% sent
   recipients   EmailCampaignRecipient[]
   createdAt    DateTime                 @default(now())
   updatedAt    DateTime                 @updatedAt

@@ -8,7 +8,22 @@ export class EmailCampaignService {
   /**
    * Create a new email campaign
    */
-  async createCampaign(data: { name?: string; subject: string; htmlTemplate: string; pdfUrl?: string; scheduledAt?: string; timezone?: string; senderAccountIds?: string[]; recipients: { email: string; name?: string; variables?: any }[] }) {
+  async createCampaign(data: { 
+    name?: string; 
+    subject: string; 
+    htmlTemplate: string; 
+    pdfUrl?: string; 
+    scheduledAt?: string; 
+    timezone?: string; 
+    senderAccountIds?: string[]; 
+    recipients: { email: string; name?: string; variables?: any }[];
+    batchSize?: number;
+    recipientDelay?: number;
+    batchDelay?: number;
+    thresholdCount?: number;
+    thresholdDelay?: number;
+    percentageDelay?: number;
+  }) {
     const status = data.scheduledAt ? 'SCHEDULED' : 'DRAFT';
     return prisma.emailCampaign.create({
       data: {
@@ -21,6 +36,12 @@ export class EmailCampaignService {
         timezone: data.timezone || null,
         senderAccountIds: data.senderAccountIds || [],
         totalCount: data.recipients.length,
+        batchSize: data.batchSize !== undefined ? data.batchSize : 10,
+        recipientDelay: data.recipientDelay !== undefined ? data.recipientDelay : 1.5,
+        batchDelay: data.batchDelay !== undefined ? data.batchDelay : 15.0,
+        thresholdCount: data.thresholdCount !== undefined ? data.thresholdCount : 100,
+        thresholdDelay: data.thresholdDelay !== undefined ? data.thresholdDelay : 30.0,
+        percentageDelay: data.percentageDelay !== undefined ? data.percentageDelay : 60.0,
         recipients: {
           create: data.recipients.map(r => ({
             email: r.email,
@@ -34,7 +55,7 @@ export class EmailCampaignService {
   }
 
   /**
-   * Send a campaign using Round-Robin Inbox Rotation
+   * Send a campaign using Round-Robin Inbox Rotation and customizable batch throttling
    */
   async sendCampaign(campaignId: string) {
     const campaign = await prisma.emailCampaign.findUnique({
@@ -42,6 +63,7 @@ export class EmailCampaignService {
       include: {
         recipients: {
           where: { status: 'PENDING' },
+          orderBy: { id: 'asc' },
         },
       },
     });
@@ -106,6 +128,26 @@ export class EmailCampaignService {
         return 'SPAM';
       }
       return 'FAILED';
+    };
+
+    // Helper to sleep with periodic database checks to abort if STOPPED
+    const sleepWithCheck = async (minutes: number): Promise<boolean> => {
+      const ms = minutes * 60 * 1000;
+      const checkInterval = 5000; // Check DB every 5 seconds
+      let elapsed = 0;
+      while (elapsed < ms) {
+        const latest = await prisma.emailCampaign.findUnique({
+          where: { id: campaignId },
+          select: { status: true },
+        });
+        if (!latest || latest.status === 'STOPPED' || latest.status === 'CANCELLED') {
+          return false; // Campaign stopped during sleep
+        }
+        const timeToSleep = Math.min(checkInterval, ms - elapsed);
+        await new Promise(resolve => setTimeout(resolve, timeToSleep));
+        elapsed += timeToSleep;
+      }
+      return true; // Completed sleep without stop
     };
 
     // Process a single recipient
@@ -175,6 +217,12 @@ export class EmailCampaignService {
           },
         });
         successCount++;
+        
+        // Update campaign counts in real-time
+        await prisma.emailCampaign.update({
+          where: { id: campaignId },
+          data: { successCount }
+        });
       } catch (error: any) {
         console.error(`Failed to send email to ${recipient.email} via ${sender.email}:`, error);
         
@@ -200,25 +248,82 @@ export class EmailCampaignService {
         } else {
           failCount++;
         }
+
+        // Update campaign counts in real-time
+        await prisma.emailCampaign.update({
+          where: { id: campaignId },
+          data: { failCount, bounceCount, spamCount }
+        });
       }
     };
 
-    // Send emails in batches of 50 to prevent SMTP blocking and RAM spikes
-    const batchSize = 50;
-    for (let i = 0; i < campaign.recipients.length; i += batchSize) {
-      const batch = campaign.recipients.slice(i, i + batchSize);
-      
-      await Promise.allSettled(
-        batch.map((recipient, idx) => processRecipient(recipient, i + idx))
-      );
+    // Fetch global timing settings from db Setting table, fallback to defaults
+    const settingsList = await prisma.setting.findMany();
+    const getSettingVal = (key: string, defaultValue: number): number => {
+      const s = settingsList.find(item => item.key === key);
+      return s ? parseFloat(s.value) : defaultValue;
+    };
 
-      // Add a 10 second pause between batches to respect rate limits (skip pause on final batch)
-      if (i + batchSize < campaign.recipients.length) {
-        await new Promise(resolve => setTimeout(resolve, 10000));
+    const batchSize = getSettingVal('email_batch_size', 10);
+    const recipientDelay = getSettingVal('email_recipient_delay', 1.5);
+    const batchDelay = getSettingVal('email_batch_delay', 15.0);
+    const thresholdCount = getSettingVal('email_threshold_count', 100);
+    const thresholdDelay = getSettingVal('email_threshold_delay', 30.0);
+    const percentageDelay = getSettingVal('email_percentage_delay', 60.0);
+
+    const totalSentAtStart = campaign.successCount + campaign.failCount + campaign.bounceCount + campaign.spamCount;
+    const fiftyPercentCount = Math.floor(campaign.totalCount / 2);
+
+    // Sequential loop through pending recipients
+    for (let idx = 0; idx < campaign.recipients.length; idx++) {
+      const recipient = campaign.recipients[idx];
+
+      // Check if campaign was manually stopped/cancelled
+      const latest = await prisma.emailCampaign.findUnique({
+        where: { id: campaignId },
+        select: { status: true },
+      });
+      if (!latest || latest.status === 'STOPPED' || latest.status === 'CANCELLED') {
+        console.log(`Campaign ${campaignId} was manually stopped or cancelled. Halting sending.`);
+        return { successCount, failCount, bounceCount, spamCount, total: campaign.totalCount };
+      }
+
+      // Process recipient (send email, increment counters, and update DB)
+      await processRecipient(recipient, idx);
+
+      const currentSent = totalSentAtStart + idx + 1;
+
+      // Apply dynamic sleep logic if there are more recipients to process
+      if (idx + 1 < campaign.recipients.length) {
+        let sleepMinutes = 0;
+        let sleepReason = "";
+
+        if (currentSent === fiftyPercentCount && fiftyPercentCount > 0) {
+          sleepMinutes = percentageDelay;
+          sleepReason = `50% milestone (${fiftyPercentCount} emails sent)`;
+        } else if (currentSent % thresholdCount === 0) {
+          sleepMinutes = thresholdDelay;
+          sleepReason = `threshold limit (${currentSent} emails sent)`;
+        } else if ((idx + 1) % batchSize === 0) {
+          sleepMinutes = batchDelay;
+          sleepReason = `batch boundary (${idx + 1} emails in this run)`;
+        } else {
+          sleepMinutes = recipientDelay;
+          sleepReason = "individual recipient gap";
+        }
+
+        if (sleepMinutes > 0) {
+          console.log(`Campaign ${campaignId}: sleeping for ${sleepMinutes} minutes due to ${sleepReason}`);
+          const continueSending = await sleepWithCheck(sleepMinutes);
+          if (!continueSending) {
+            console.log(`Campaign ${campaignId} stopped during sleep.`);
+            return { successCount, failCount, bounceCount, spamCount, total: campaign.totalCount };
+          }
+        }
       }
     }
 
-    // Update final campaign status
+    // Final update of campaign status to COMPLETED
     await prisma.emailCampaign.update({
       where: { id: campaignId },
       data: {
@@ -230,7 +335,7 @@ export class EmailCampaignService {
       },
     });
 
-    return { successCount, failCount, bounceCount, spamCount, total: campaign.recipients.length };
+    return { successCount, failCount, bounceCount, spamCount, total: campaign.totalCount };
   }
 }
 

@@ -67,7 +67,23 @@ router.get('/:id', async (req, res) => {
 // Create a new campaign
 router.post('/', async (req, res) => {
   try {
-    const { name, subject, htmlTemplate, recipients, pdfUrl, scheduledAt, timezone, senderAccountIds, targetListId } = req.body;
+    const { 
+      name, 
+      subject, 
+      htmlTemplate, 
+      recipients, 
+      pdfUrl, 
+      scheduledAt, 
+      timezone, 
+      senderAccountIds, 
+      targetListId,
+      batchSize,
+      recipientDelay,
+      batchDelay,
+      thresholdCount,
+      thresholdDelay,
+      percentageDelay
+    } = req.body;
     
     let finalRecipients = recipients;
     if (targetListId) {
@@ -100,7 +116,13 @@ router.post('/', async (req, res) => {
       pdfUrl, 
       scheduledAt, 
       timezone,
-      senderAccountIds
+      senderAccountIds,
+      batchSize: batchSize !== undefined ? Number(batchSize) : undefined,
+      recipientDelay: recipientDelay !== undefined ? Number(recipientDelay) : undefined,
+      batchDelay: batchDelay !== undefined ? Number(batchDelay) : undefined,
+      thresholdCount: thresholdCount !== undefined ? Number(thresholdCount) : undefined,
+      thresholdDelay: thresholdDelay !== undefined ? Number(thresholdDelay) : undefined,
+      percentageDelay: percentageDelay !== undefined ? Number(percentageDelay) : undefined
     });
     res.status(201).json({ 
       message: 'Campaign created successfully', 
@@ -122,6 +144,30 @@ router.post('/:id/send', async (req, res) => {
     res.json({ message: 'Campaign sending process started in the background. Status will update shortly.' });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+// Stop a campaign in progress
+router.post('/:id/stop', async (req, res) => {
+  try {
+    const campaign = await prisma.emailCampaign.findUnique({
+      where: { id: req.params.id }
+    });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+    if (campaign.status !== 'SENDING' && campaign.status !== 'SCHEDULED') {
+      return res.status(400).json({ error: 'Only active (SENDING) or scheduled campaigns can be stopped' });
+    }
+
+    await prisma.emailCampaign.update({
+      where: { id: req.params.id },
+      data: { status: 'STOPPED' }
+    });
+
+    res.json({ message: 'Campaign stop signal sent successfully. Status will update to STOPPED shortly.' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
