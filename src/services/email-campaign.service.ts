@@ -140,8 +140,8 @@ export class EmailCampaignService {
           where: { id: campaignId },
           select: { status: true },
         });
-        if (!latest || latest.status === 'STOPPED' || latest.status === 'CANCELLED') {
-          return false; // Campaign stopped during sleep
+        if (!latest || latest.status === 'STOPPED' || latest.status === 'PAUSED' || latest.status === 'CANCELLED') {
+          return false; // Campaign stopped/paused/cancelled during sleep
         }
         const timeToSleep = Math.min(checkInterval, ms - elapsed);
         await new Promise(resolve => setTimeout(resolve, timeToSleep));
@@ -283,8 +283,8 @@ export class EmailCampaignService {
         where: { id: campaignId },
         select: { status: true },
       });
-      if (!latest || latest.status === 'STOPPED' || latest.status === 'CANCELLED') {
-        console.log(`Campaign ${campaignId} was manually stopped or cancelled. Halting sending.`);
+      if (!latest || latest.status === 'STOPPED' || latest.status === 'PAUSED' || latest.status === 'CANCELLED') {
+        console.log(`Campaign ${campaignId} was manually paused, stopped, or cancelled. Halting sending.`);
         return { successCount, failCount, bounceCount, spamCount, total: campaign.totalCount };
       }
 

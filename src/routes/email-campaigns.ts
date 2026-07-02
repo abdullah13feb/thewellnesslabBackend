@@ -147,8 +147,8 @@ router.post('/:id/send', async (req, res) => {
   }
 });
 
-// Stop a campaign in progress
-router.post('/:id/stop', async (req, res) => {
+// Pause a campaign in progress
+router.post('/:id/pause', async (req, res) => {
   try {
     const campaign = await prisma.emailCampaign.findUnique({
       where: { id: req.params.id }
@@ -156,16 +156,40 @@ router.post('/:id/stop', async (req, res) => {
     if (!campaign) {
       return res.status(404).json({ error: 'Campaign not found' });
     }
-    if (campaign.status !== 'SENDING' && campaign.status !== 'SCHEDULED') {
-      return res.status(400).json({ error: 'Only active (SENDING) or scheduled campaigns can be stopped' });
+    if (campaign.status !== 'SENDING') {
+      return res.status(400).json({ error: 'Only campaigns in SENDING status can be paused' });
     }
 
     await prisma.emailCampaign.update({
       where: { id: req.params.id },
-      data: { status: 'STOPPED' }
+      data: { status: 'PAUSED' }
     });
 
-    res.json({ message: 'Campaign stop signal sent successfully. Status will update to STOPPED shortly.' });
+    res.json({ message: 'Campaign paused successfully.' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cancel a campaign in progress, paused, or scheduled
+router.post('/:id/cancel', async (req, res) => {
+  try {
+    const campaign = await prisma.emailCampaign.findUnique({
+      where: { id: req.params.id }
+    });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+    if (campaign.status !== 'SENDING' && campaign.status !== 'PAUSED' && campaign.status !== 'SCHEDULED') {
+      return res.status(400).json({ error: 'Only active, paused, or scheduled campaigns can be cancelled' });
+    }
+
+    await prisma.emailCampaign.update({
+      where: { id: req.params.id },
+      data: { status: 'CANCELLED' }
+    });
+
+    res.json({ message: 'Campaign cancelled successfully.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
