@@ -47,18 +47,65 @@ router.get('/', async (req, res) => {
 // Get a specific campaign
 router.get('/:id', async (req, res) => {
   try {
-    const campaign = await prisma.emailCampaign.findUnique({
-      where: { id: req.params.id },
-      include: {
-        recipients: {
-          include: {
-            senderAccount: true
-          }
-        }
+    const { page, limit, status } = req.query;
+
+    // Build recipient where clause supporting:
+    //   status = SENT | PENDING | FAILED | BOUNCED | SPAM  → filter by record status
+    //   status = OPENED  → recipients where openedAt IS NOT NULL
+    //   status = CLICKED → recipients where clickedAt IS NOT NULL
+    //   status = ALL (or omitted) → no filter
+    const recipientWhere: any = { campaignId: req.params.id };
+    if (status && status !== 'ALL') {
+      if (status === 'OPENED') {
+        recipientWhere.openedAt = { not: null };
+      } else if (status === 'CLICKED') {
+        recipientWhere.clickedAt = { not: null };
+      } else {
+        recipientWhere.status = status as string;
       }
+    }
+
+    const campaign = await prisma.emailCampaign.findUnique({
+      where: { id: req.params.id }
     });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-    res.json(campaign);
+
+    // Count filtered recipients (drives pagination)
+    const totalRecipients = await prisma.emailCampaignRecipient.count({
+      where: recipientWhere
+    });
+
+    // Count all recipients (for overview stats bar)
+    const totalRecipientsAll = await prisma.emailCampaignRecipient.count({
+      where: { campaignId: req.params.id }
+    });
+
+    // limit=0 means "show all" (no pagination)
+    const parsedLimit = parseInt(limit as string);
+    const showAll = parsedLimit === 0;
+    const allowedLimits = [10, 25, 50, 100];
+    const limitNum = showAll ? totalRecipients : (allowedLimits.includes(parsedLimit) ? parsedLimit : 10);
+    const pageNum = showAll ? 1 : Math.max(1, parseInt(page as string) || 1);
+    const skip = showAll ? 0 : (pageNum - 1) * limitNum;
+
+    const recipients = await prisma.emailCampaignRecipient.findMany({
+      where: recipientWhere,
+      include: { senderAccount: true },
+      orderBy: { id: 'asc' },
+      skip,
+      ...(showAll ? {} : { take: limitNum })
+    });
+
+    res.json({
+      ...campaign,
+      recipients,
+      totalRecipients,     // filtered count (pagination denominator)
+      totalRecipientsAll,  // unfiltered count (overview stats)
+      page: pageNum,
+      limit: showAll ? 0 : limitNum,
+      showAll,
+      statusFilter: status || 'ALL'
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
