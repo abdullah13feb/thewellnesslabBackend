@@ -21,8 +21,6 @@ export function startEmailScheduler() {
                 }
             });
 
-            if (dueCampaigns.length === 0) return;
-
             for (const campaign of dueCampaigns) {
                 console.log(`Processing scheduled campaign ${campaign.id} - ${campaign.subject}`);
                 
@@ -30,6 +28,22 @@ export function startEmailScheduler() {
                 emailCampaignService.sendCampaign(campaign.id).catch(err => {
                     console.error(`Error sending scheduled campaign ${campaign.id}:`, err);
                 });
+            }
+
+            // Find campaigns that are SENDING but not running in memory (stranded)
+            const sendingCampaigns = await prisma.emailCampaign.findMany({
+                where: {
+                    status: 'SENDING'
+                }
+            });
+
+            for (const campaign of sendingCampaigns) {
+                if (!emailCampaignService.isCampaignRunning(campaign.id)) {
+                    console.log(`Auto-recovering stranded SENDING campaign ${campaign.id} - ${campaign.subject}`);
+                    emailCampaignService.sendCampaign(campaign.id).catch(err => {
+                        console.error(`Error recovering campaign ${campaign.id}:`, err);
+                    });
+                }
             }
         } catch (error) {
             console.error('Error in email scheduler:', error);

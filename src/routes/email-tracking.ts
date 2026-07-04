@@ -105,6 +105,22 @@ router.get('/open/:recipientId', async (req, res) => {
   res.end(PIXEL_BUFFER);
 });
 
+function isBotClickScanner(userAgent: string | undefined): boolean {
+  if (!userAgent) return false;
+  const ua = userAgent.toLowerCase();
+  
+  const botKeywords = [
+    'bot', 'crawler', 'spider', 'yahoo', 'bing', 'google', 'slurp',
+    'baiduspider', 'yandex', 'sogou', 'exabot', 'facebot', 'facebook',
+    'ia_archiver', 'officeheaders', 'microsoft office', 'gsa-crawler',
+    'adsbot-google', 'mediapartners-google', 'aqua 2.0', 'safelinks',
+    'outlook-express', 'pingdom', 'uptime', 'monit', 'virus', 'threat',
+    'scanner', 'firewall', 'security', 'inspect'
+  ];
+
+  return botKeywords.some(keyword => ua.includes(keyword));
+}
+
 // Click tracking endpoint
 router.get('/click/:recipientId', async (req, res) => {
   const { recipientId } = req.params;
@@ -112,6 +128,12 @@ router.get('/click/:recipientId', async (req, res) => {
 
   if (!targetUrl) {
     return res.status(400).send('Missing target URL');
+  }
+
+  const userAgent = req.headers['user-agent'];
+  if (isBotClickScanner(userAgent)) {
+    console.log(`Ignoring bot/scanner click with User-Agent: ${userAgent}`);
+    return res.redirect(302, targetUrl);
   }
 
   try {
@@ -122,7 +144,7 @@ router.get('/click/:recipientId', async (req, res) => {
 
     // If recipient exists and this is the first time they click
     if (recipient && !recipient.clickedAt) {
-      const deviceType = detectDeviceType(req.headers['user-agent']);
+      const deviceType = detectDeviceType(userAgent);
       const deviceField = getDeviceField(deviceType);
       const ipAddress = getClientIp(req);
       const ipLocation = await lookupLocation(ipAddress);
