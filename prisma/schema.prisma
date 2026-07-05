@@ -462,3 +462,84 @@ model TargetList {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+// ─── Chat Widget + CRM + Agent Handoff ───────────────────────────────────────
+
+model ChatSession {
+  id              String        @id @default(cuid())
+
+  // Visitor info
+  visitorName     String
+  visitorEmail    String?
+  visitorPhone    String?
+  visitorCountry  String?
+  visitorDevice   String?
+  visitorBrowser  String?
+
+  // Traffic
+  source          String?       // e.g. "direct", "google", "facebook"
+  referrer        String?
+  currentPage     String?
+  pagesVisited    String[]      @default([])
+  sessionDuration Int?          // seconds
+
+  // Qualification answers
+  interestedIn    String?       // e.g. "Pain Relief"
+  helpWith        String?       // free text
+
+  // Lead scoring
+  leadScore       String        @default("COLD") // HOT | WARM | COLD
+  leadScoreNum    Int           @default(0)       // 0-100
+
+  // Session mode
+  status          String        @default("BOT")  // BOT | WAITING | AGENT | CLOSED
+
+  // Relations
+  leadId          String?       // linked CRM lead record
+  agentId         String?       // Clerk ID of assigned agent
+  agentName       String?       // display name of agent
+
+  messages        ChatMessage[]
+
+  // Products
+  productsDiscussed String[]    @default([])
+
+  // AI generated fields
+  aiSummary       String?       @db.Text
+  aiIntent        String?       // e.g. "High Purchase Intent"
+  aiAction        String?       // e.g. "Provide quotation"
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model ChatMessage {
+  id          String      @id @default(cuid())
+  sessionId   String
+  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  role        String      // "user" | "assistant" | "agent" | "system"
+  content     String      @db.Text
+
+  // If sent by human agent
+  agentId     String?
+  agentName   String?
+
+  // AI metadata
+  confidence  Float?      // 0.0 - 1.0
+  products    Json?       // Array of recommended products
+
+  createdAt   DateTime    @default(now())
+}
+
+model ChatAgent {
+  id          String    @id @default(cuid())
+  clerkId     String    @unique
+  name        String
+  title       String    @default("Sales Consultant")
+  avatar      String?
+  isOnline    Boolean   @default(false)
+  lastSeenAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}

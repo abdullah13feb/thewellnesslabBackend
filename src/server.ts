@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import { createServer } from "http";
 import productRoutes from "./routes/products.js";
 import cartRoutes from "./routes/cart.js";
 import orderRoutes from "./routes/orders.js";
@@ -31,6 +32,8 @@ import emailCampaignRoutes from "./routes/email-campaigns.js";
 import emailTemplateRoutes from "./routes/email-templates.js";
 import emailTrackingRoutes from "./routes/email-tracking.js";
 import { startReplyTracker } from "./services/reply-tracker.service.js";
+import chatRoutes from "./routes/chat.js";
+import { initSocketServer } from "./lib/socket.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -39,6 +42,12 @@ dotenv.config();
 
 const app: Express = express();
 const PORT = process.env.PORT || 5000;
+
+// Create HTTP server
+const httpServer = createServer(app);
+
+// Initialize socket server
+initSocketServer(httpServer);
 
 // Middleware
 const allowedOrigins = [
@@ -102,6 +111,7 @@ app.use("/api/email-senders", emailSenderRoutes);
 app.use("/api/email-campaigns", emailCampaignRoutes);
 app.use("/api/email-templates", emailTemplateRoutes);
 app.use("/api/tracking", emailTrackingRoutes);
+app.use("/api/chat", chatRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
@@ -140,6 +150,6 @@ initWeeklyScheduler();
 startReplyTracker();
 
 // Start server
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
