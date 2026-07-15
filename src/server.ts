@@ -8,6 +8,7 @@ import { createServer } from "http";
 import productRoutes from "./routes/products.js";
 import cartRoutes from "./routes/cart.js";
 import orderRoutes from "./routes/orders.js";
+import flexOrderRoutes from "./routes/flexOrders.js";
 import blogRoutes from "./routes/blogs.js";
 import authRoutes from "./routes/auth.js";
 import uploadRoutes from "./routes/upload.js";
@@ -58,7 +59,9 @@ const allowedOrigins = [
   "https://thewellnesslab.ae",
   "http://localhost:8080",
   "http://localhost:5173",
-  "http://localhost:5174"
+  "http://localhost:5174",
+  "https://www.flexa.thewellnesslab.ae",
+  "https://flexa.thewellnesslab.ae"
 ].filter(Boolean) as string[];
 
 app.use(cors({
@@ -92,6 +95,7 @@ app.use("/uploads", express.static(path.join(__dirname, "../../public/uploads"))
 app.use("/api/products", productRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/flex-orders", flexOrderRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/upload", uploadRoutes);

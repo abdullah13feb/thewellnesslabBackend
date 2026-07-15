@@ -543,3 +543,26 @@ model ChatAgent {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
+
+model FlexOrder {
+  id              String      @id @default(cuid())
+  guestName       String?
+  guestEmail      String?
+  guestPhone      String?
+  address         String
+  city            String
+  pincode         String      @default("00000")
+  items           Json        // [{ name, quantity, price, colour }]
+  subtotal        Float       @default(0)
+  shippingCharge  Float       @default(0)
+  discount        Float       @default(0)
+  totalPrice      Float
+  couponCode      String?
+  status          String      @default("PENDING")
+  paymentMethod   String      @default("cod")
+  paymentStatus   String      @default("pending")
+  stripePaymentId String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
