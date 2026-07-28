@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import prisma from './prisma.js';
 
 dotenv.config();
 
@@ -194,3 +195,167 @@ export const sendOrderConfirmationEmail = async (order: any) => {
     console.error('Error sending order confirmation email:', error);
   }
 };
+
+export const sendLeadNotificationEmail = async (lead: any) => {
+  try {
+    const setting = await prisma.setting.findUnique({
+      where: { key: "lead_notification_config" },
+    });
+
+    if (!setting || !setting.value) {
+      console.log("No lead notification configuration found.");
+      return;
+    }
+
+    let config: { enabled: boolean; recipientEmails: string; emailSubject?: string } = { enabled: false, recipientEmails: "", emailSubject: "" };
+    try {
+      config = JSON.parse(setting.value);
+    } catch (e) {
+      console.error("Failed to parse lead_notification_config setting:", e);
+      return;
+    }
+
+    if (!config.enabled || !config.recipientEmails) {
+      console.log("Lead email notifications are disabled or no recipient emails specified.");
+      return;
+    }
+
+    const recipients = config.recipientEmails
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0 && e.includes("@"));
+
+    if (recipients.length === 0) {
+      console.log("No valid email recipients found in lead notification config.");
+      return;
+    }
+
+    const defaultSubject = `🚨 New Lead Received: ${lead.name || "Form Submission"} (${lead.source || "Website"})`;
+    const finalSubject = config.emailSubject && config.emailSubject.trim() !== ""
+      ? config.emailSubject
+          .replace(/{{name}}/g, lead.name || "Form Submission")
+          .replace(/{{source}}/g, lead.source || "Website")
+          .replace(/{{email}}/g, lead.email || "")
+          .replace(/{{phone}}/g, lead.phone || "")
+          .replace(/{{city}}/g, lead.city || "")
+      : defaultSubject;
+
+    // Format dynamic fields into clean HTML table rows if present
+    let dynamicFieldsHtml = "";
+    if (lead.dynamicFields && typeof lead.dynamicFields === "object" && Object.keys(lead.dynamicFields).length > 0) {
+      const rows = Object.entries(lead.dynamicFields)
+        .map(
+          ([key, val]) => `
+          <tr>
+            <td style="padding: 8px 12px; font-weight: 600; color: #4b5563; border-bottom: 1px solid #f3f4f6; width: 40%; font-size: 13px;">${key}</td>
+            <td style="padding: 8px 12px; color: #111827; border-bottom: 1px solid #f3f4f6; font-size: 13px;">${String(val)}</td>
+          </tr>
+        `
+        )
+        .join("");
+
+      dynamicFieldsHtml = `
+        <div style="margin-top: 24px;">
+          <div style="font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Additional Form Details / Answers</div>
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; background-color: #f9fafb; border-radius: 6px; overflow: hidden; border: 1px solid #e5e7eb;">
+            ${rows}
+          </table>
+        </div>
+      `;
+    }
+
+    const mailOptions = {
+      from: `"THE WELLNESS LAB Notifications" <${process.env.EMAIL_USER}>`,
+      to: recipients.join(", "),
+      subject: finalSubject,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f3f4f6; -webkit-font-smoothing: antialiased; }
+            .wrapper { padding: 30px 15px; background-color: #f3f4f6; width: 100%; box-sizing: border-box; }
+            .main { background-color: #ffffff; margin: 0 auto; width: 100%; max-width: 560px; padding: 32px; border-radius: 12px; box-sizing: border-box; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+            .brand-logo { font-size: 22px; font-weight: 800; color: #111; letter-spacing: -0.5px; margin-bottom: 20px; }
+            .header-badge { display: inline-block; background-color: #dc2626; color: #ffffff; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+            .title { font-size: 20px; font-weight: 700; color: #111827; margin: 0 0 16px; }
+            .info-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            .info-table td { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f3f4f6; }
+            .info-label { font-weight: 600; color: #4b5563; width: 35%; }
+            .info-val { color: #111827; font-weight: 500; }
+            .footer { text-align: center; font-size: 11px; color: #9ca3af; margin-top: 28px; line-height: 1.5; }
+          </style>
+        </head>
+        <body>
+          <div class="wrapper">
+            <div class="main">
+              <div class="brand-logo">THE<span style="color: #e63946; font-weight: 800;">WELLNESS</span>LAB</div>
+              <div class="header-badge">Instant Lead Alert</div>
+              <h2 class="title">New Lead Submission</h2>
+              <p style="font-size: 14px; color: #4b5563; margin-top: 0;">A new lead has submitted their details via the <strong>${lead.source || "Website"}</strong> form.</p>
+              
+              <table class="info-table">
+                <tr>
+                  <td class="info-label">Full Name</td>
+                  <td class="info-val">${lead.name || "N/A"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Email</td>
+                  <td class="info-val">${lead.email ? `<a href="mailto:${lead.email}" style="color: #2563eb; text-decoration: none;">${lead.email}</a>` : "N/A"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Phone</td>
+                  <td class="info-val">${lead.phone ? `<a href="tel:${lead.phone}" style="color: #2563eb; text-decoration: none;">${lead.phone}</a>` : "N/A"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">City / Location</td>
+                  <td class="info-val">${lead.city || "N/A"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Company</td>
+                  <td class="info-val">${lead.company || "N/A"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Job Title</td>
+                  <td class="info-val">${lead.jobTitle || "N/A"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Lead Source</td>
+                  <td class="info-val"><span style="background-color: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">${lead.source || "Website"}</span></td>
+                </tr>
+                <tr>
+                  <td class="info-label">Status</td>
+                  <td class="info-val">${lead.status || "NEW"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Received At</td>
+                  <td class="info-val">${new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai", dateStyle: "medium", timeStyle: "short" })} (GST)</td>
+                </tr>
+              </table>
+
+              ${dynamicFieldsHtml}
+
+              <div style="margin-top: 28px; text-align: center;">
+                <a href="https://thewellnesslab.ae/admin/leads" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 13px; font-weight: 600; display: inline-block;">View in Admin Portal →</a>
+              </div>
+
+              <div class="footer">
+                Automated Lead Notification System — THE WELLNESS LAB<br>
+                This notification was sent based on your Lead Notification settings.
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`Lead notification email successfully sent to: ${recipients.join(", ")}`);
+  } catch (error) {
+    console.error("Error sending lead notification email:", error);
+  }
+};
+

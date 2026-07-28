@@ -1,8 +1,57 @@
 import { Router } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js";
+import { sendLeadNotificationEmail } from "../lib/email.js";
 
 const router = Router();
+
+// --- Notification Config Routes ---
+
+// Get lead email notification configuration
+router.get("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
+  try {
+    const setting = await prisma.setting.findUnique({
+      where: { key: "lead_notification_config" },
+    });
+
+    let config = { enabled: false, recipientEmails: "", emailSubject: "" };
+    if (setting?.value) {
+      try {
+        config = JSON.parse(setting.value);
+      } catch (e) {
+        console.error("Error parsing lead notification config:", e);
+      }
+    }
+
+    res.json({ success: true, data: config });
+  } catch (error) {
+    console.error("Error fetching notification config:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
+
+// Update lead email notification configuration
+router.post("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
+  try {
+    const { enabled, recipientEmails, emailSubject } = req.body;
+    const configValue = JSON.stringify({
+      enabled: Boolean(enabled),
+      recipientEmails: String(recipientEmails || "").trim(),
+      emailSubject: String(emailSubject || "").trim(),
+    });
+
+    const setting = await prisma.setting.upsert({
+      where: { key: "lead_notification_config" },
+      update: { value: configValue },
+      create: { key: "lead_notification_config", value: configValue },
+    });
+
+    res.json({ success: true, data: JSON.parse(setting.value) });
+  } catch (error) {
+    console.error("Error updating notification config:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
 
 // --- Status Management Routes ---
 
@@ -88,6 +137,11 @@ router.post("/public", async (req, res) => {
       },
     });
 
+    // Send email notification asynchronously
+    sendLeadNotificationEmail(lead).catch((err) => {
+      console.error("Failed to send lead notification email for public lead:", err);
+    });
+
     res.status(201).json({ success: true, data: lead });
   } catch (error) {
     console.error("Error creating public lead:", error);
@@ -116,6 +170,11 @@ router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => 
         city,
         dynamicFields: dynamicFields || {},
       },
+    });
+
+    // Send email notification asynchronously
+    sendLeadNotificationEmail(lead).catch((err) => {
+      console.error("Failed to send lead notification email for admin lead:", err);
     });
 
     res.status(201).json({ success: true, data: lead });
