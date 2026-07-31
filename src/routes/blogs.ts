@@ -4,16 +4,35 @@ import { requireAuthOrApiKey, requireAdminOrApiKey } from '../middleware/auth.js
 
 const router = express.Router();
 
-// Get all blogs
+// Get all blogs (Public)
 router.get('/', async (req, res) => {
     try {
         const blogs = await prisma.blog.findMany({
+            where: {
+                OR: [
+                    { publishAt: null },
+                    { publishAt: { lte: new Date() } }
+                ]
+            },
             orderBy: { createdAt: 'desc' },
         });
         res.json(blogs);
     } catch (error) {
         console.log("Error fetching blogs:", error);
         res.status(500).json({ error: "Failed to fetch blogs" });
+    }
+});
+
+// Get all blogs for admin (Admin only)
+router.get('/admin-list', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
+    try {
+        const blogs = await prisma.blog.findMany({
+            orderBy: { createdAt: 'desc' },
+        });
+        res.json(blogs);
+    } catch (error) {
+        console.log("Error fetching blogs for admin:", error);
+        res.status(500).json({ error: "Failed to fetch blogs for admin" });
     }
 });
 
@@ -35,7 +54,14 @@ router.get('/:id', async (req, res) => {
 // Create blog (Admin only)
 router.post('/', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     try {
-        const { title, slug, category, author, excerpt, content, image, readTime, featured } = req.body;
+        const { title, slug, category, author, excerpt, content, image, readTime, featured, publishAt } = req.body;
+        
+        let publishAtDate: Date | null = null;
+        if (publishAt) {
+            const timestamp = String(publishAt).length === 10 ? Number(publishAt) * 1000 : Number(publishAt);
+            publishAtDate = new Date(timestamp);
+        }
+
         const blog = await prisma.blog.create({
             data: {
                 title,
@@ -48,6 +74,7 @@ router.post('/', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => 
                 readTime,
                 featured,
                 authorId: req.auth?.userId || null,
+                publishAt: publishAtDate,
             },
         });
         res.status(201).json(blog);
@@ -60,7 +87,16 @@ router.post('/', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => 
 // Update blog (Admin only)
 router.put('/:id', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     try {
-        const { title, slug, category, author, excerpt, content, image, readTime, featured } = req.body;
+        const { title, slug, category, author, excerpt, content, image, readTime, featured, publishAt } = req.body;
+        
+        let publishAtDate: Date | null = null;
+        if (publishAt !== undefined) {
+            if (publishAt) {
+                const timestamp = String(publishAt).length === 10 ? Number(publishAt) * 1000 : Number(publishAt);
+                publishAtDate = new Date(timestamp);
+            }
+        }
+
         const blog = await prisma.blog.update({
             where: { id: req.params.id },
             data: {
@@ -72,7 +108,8 @@ router.put('/:id', requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) =
                 content,
                 image,
                 readTime,
-                featured
+                featured,
+                ...(publishAt !== undefined && { publishAt: publishAtDate })
             },
         });
         res.json(blog);
