@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "deploy": "serverless@3.38.0 deploy",
     "preview": "npm run build && npm start",
     "postinstall": "prisma generate"
   },
