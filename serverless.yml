@@ -1,0 +1,50 @@
+service: wellnesslab-backend
+useDotenv: true
+
+plugins:
+  - serverless-esbuild
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ap-south-1
+  stage: dev
+  timeout: 30
+  memorySize: 512
+  environment:
+    DATABASE_URL: ${env:DATABASE_URL, ''}
+    DIRECT_URL: ${env:DIRECT_URL, ''}
+    CLERK_SECRET_KEY: ${env:CLERK_SECRET_KEY, ''}
+    CLERK_PUBLISHABLE_KEY: ${env:CLERK_PUBLISHABLE_KEY, ''}
+    SUPABASE_URL: ${env:SUPABASE_URL, ''}
+    SUPABASE_JWT_SECRET: ${env:SUPABASE_JWT_SECRET, ''}
+    CLOUDINARY_CLOUD_NAME: ${env:CLOUDINARY_CLOUD_NAME, ''}
+    CLOUDINARY_API_KEY: ${env:CLOUDINARY_API_KEY, ''}
+    CLOUDINARY_API_SECRET: ${env:CLOUDINARY_API_SECRET, ''}
+    STRIPE_SECRET_KEY: ${env:STRIPE_SECRET_KEY, ''}
+    OPENAI_API_KEY: ${env:OPENAI_API_KEY, ''}
+
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: false
+    target: node20
+    platform: node
+    format: cjs
+    outputFileExtension: .js
+    external:
+      - '@prisma/engines'
+
+package:
+  individually: false
+  patterns:
+    - 'package.json'
+    - 'node_modules/.prisma/client/libquery_engine-rhel-openssl-3.0.x.so.node'
+    - 'node_modules/.prisma/client/schema.prisma'
+
+functions:
+  api:
+    handler: src/lambda.handler
+    events:
+      - httpApi: '*'

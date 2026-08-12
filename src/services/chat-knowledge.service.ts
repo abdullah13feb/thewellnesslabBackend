@@ -2,13 +2,8 @@ import OpenAI from "openai";
 import prisma from "../lib/prisma.js";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const CACHE_FILE_PATH = path.join(__dirname, "../../chat_knowledge_cache.json");
+const currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+const CACHE_FILE_PATH = path.join(currentDir, "../../chat_knowledge_cache.json");
 
 // Fallback / default knowledge sources when DB is empty
 const DEFAULT_POLICIES = [
