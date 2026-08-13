@@ -49,18 +49,26 @@ router.get("/", async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
     const { productId } = req.query;
 
-    const whereClause: any = {
-      status: "approved",
-    };
-
+    let reviews = [];
     if (productId && typeof productId === "string") {
-      whereClause.productId = productId;
+      reviews = await (prisma as any).review.findMany({
+        where: {
+          status: "approved",
+          productId: productId,
+        },
+        orderBy: { createdAt: "desc" },
+      });
     }
 
-    const reviews = await (prisma as any).review.findMany({
-      where: whereClause,
-      orderBy: { createdAt: "desc" },
-    });
+    // If no product-specific approved reviews found, return all approved DB reviews
+    if (!reviews || reviews.length === 0) {
+      reviews = await (prisma as any).review.findMany({
+        where: {
+          status: "approved",
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    }
 
     // Calculate total count and average rating of approved reviews
     const totalCount = reviews.length;
