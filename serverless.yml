@@ -23,6 +23,28 @@ provider:
     CLOUDINARY_API_SECRET: ${env:CLOUDINARY_API_SECRET, ''}
     STRIPE_SECRET_KEY: ${env:STRIPE_SECRET_KEY, ''}
     OPENAI_API_KEY: ${env:OPENAI_API_KEY, ''}
+    EMAIL_HOST: ${env:EMAIL_HOST, ''}
+    EMAIL_PORT: ${env:EMAIL_PORT, ''}
+    EMAIL_SECURE: ${env:EMAIL_SECURE, ''}
+    EMAIL_USER: ${env:EMAIL_USER, ''}
+    EMAIL_PASS: ${env:EMAIL_PASS, ''}
+    FRONTEND_URL: ${env:FRONTEND_URL, ''}
+    CLIENT_URL: ${env:CLIENT_URL, ''}
+    NAJAH_FRONTEND_URL: ${env:NAJAH_FRONTEND_URL, ''}
+    NAJAH_EMAIL_USER: ${env:NAJAH_EMAIL_USER, ''}
+    NAJAH_EMAIL_PASS: ${env:NAJAH_EMAIL_PASS, ''}
+    NAJAH_EMAIL_RECEIVER: ${env:NAJAH_EMAIL_RECEIVER, ''}
+    OPENWA_API_URL: ${env:OPENWA_API_URL, ''}
+    OPENWA_API_KEY: ${env:OPENWA_API_KEY, ''}
+    OPENWA_SESSION_ID: ${env:OPENWA_SESSION_ID, ''}
+    MARKETING_HOST: ${env:MARKETING_HOST, ''}
+    MARKETING_EMAIL_PORT: ${env:MARKETING_EMAIL_PORT, ''}
+    MARKETING_EMAIL_SECURE: ${env:MARKETING_EMAIL_SECURE, ''}
+    MARKETING_EMAIL_USER: ${env:MARKETING_EMAIL_USER, ''}
+    MARKETING_EMAIL_PASS: ${env:MARKETING_EMAIL_PASS, ''}
+    APIFY_API_TOKEN: ${env:APIFY_API_TOKEN, ''}
+    APIFY_GOOGLE_MAPS_ACTOR: ${env:APIFY_GOOGLE_MAPS_ACTOR, ''}
+    API_URL: ${env:API_URL, ''}
 
 custom:
   esbuild:
@@ -47,4 +69,11 @@ functions:
   api:
     handler: src/lambda.handler
     events:
-      - httpApi: '*'
+      - http:
+          path: '/'
+          method: ANY
+          cors: true
+      - http:
+          path: '/{proxy+}'
+          method: ANY
+          cors: true

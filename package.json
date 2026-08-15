@@ -8,7 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "deploy": "serverless@3.38.0 deploy",
+    "deploy": "serverless deploy",
     "preview": "npm run build && npm start",
     "postinstall": "prisma generate"
   },
@@ -53,6 +53,7 @@
     "@types/validator": "^13.15.10",
     "esbuild": "^0.28.2",
     "prisma": "^5.7.1",
+    "serverless": "^3.38.0",
     "serverless-esbuild": "^1.57.2",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
