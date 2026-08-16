@@ -359,3 +359,191 @@ export const sendLeadNotificationEmail = async (lead: any) => {
   }
 };
 
+export const sendOrderNotificationEmail = async (order: any) => {
+  try {
+    let setting = await prisma.setting.findUnique({
+      where: { key: "order_notification_config" },
+    });
+
+    if (!setting || !setting.value) {
+      // Fallback to lead_notification_config if order_notification_config is not configured yet
+      setting = await prisma.setting.findUnique({
+        where: { key: "lead_notification_config" },
+      });
+    }
+
+    if (!setting || !setting.value) {
+      console.log("No order or lead notification configuration found.");
+      return;
+    }
+
+    let config: { enabled: boolean; recipientEmails: string; emailSubject?: string } = { enabled: false, recipientEmails: "", emailSubject: "" };
+    try {
+      config = JSON.parse(setting.value);
+    } catch (e) {
+      console.error("Failed to parse notification config for order:", e);
+      return;
+    }
+
+    if (!config.enabled || !config.recipientEmails) {
+      console.log("Order email notifications are disabled or no recipient emails specified.");
+      return;
+    }
+
+    const recipients = config.recipientEmails
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0 && e.includes("@"));
+
+    if (recipients.length === 0) {
+      console.log("No valid email recipients found in order notification config.");
+      return;
+    }
+
+    const shortId = (order.id || "").slice(-6).toUpperCase();
+    const customerName = order.guestName || (order.user ? order.user.name : "Customer");
+    const customerEmail = order.guestEmail || order.userEmail || (order.user ? order.user.email : "N/A");
+    const customerPhone = order.guestPhone || (order.user ? order.user.phone : "N/A");
+    const totalPriceFormatted = `AED ${(order.totalPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const defaultSubject = `🚨 New Order Received: #${shortId} (${customerName} - ${totalPriceFormatted})`;
+    const finalSubject = config.emailSubject && config.emailSubject.trim() !== ""
+      ? config.emailSubject
+          .replace(/{{orderId}}/g, shortId)
+          .replace(/{{customerName}}/g, customerName)
+          .replace(/{{totalPrice}}/g, totalPriceFormatted)
+          .replace(/{{email}}/g, customerEmail)
+          .replace(/{{phone}}/g, customerPhone)
+          .replace(/{{paymentMethod}}/g, (order.paymentMethod || "cod").toUpperCase())
+      : defaultSubject;
+
+    // Items list HTML
+    const itemsHtml = order.items && Array.isArray(order.items)
+      ? order.items.map((item: any) => `
+          <tr>
+            <td style="padding: 8px 12px; font-weight: 600; color: #111827; border-bottom: 1px solid #f3f4f6; font-size: 13px;">
+              ${item.product?.name || 'Product'}
+            </td>
+            <td style="padding: 8px 12px; color: #4b5563; border-bottom: 1px solid #f3f4f6; font-size: 13px; text-align: center;">
+              x${item.quantity}
+            </td>
+            <td style="padding: 8px 12px; color: #111827; border-bottom: 1px solid #f3f4f6; font-size: 13px; text-align: right; font-weight: 600;">
+              AED ${((item.price || 0) * (item.quantity || 1)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </td>
+          </tr>
+        `).join('')
+      : '<tr><td colspan="3" style="padding: 8px 12px; color: #6b7280; font-size: 13px;">No item details available</td></tr>';
+
+    const mailOptions = {
+      from: `"THE WELLNESS LAB Notifications" <${process.env.EMAIL_USER}>`,
+      to: recipients.join(", "),
+      subject: finalSubject,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f3f4f6; -webkit-font-smoothing: antialiased; }
+            .wrapper { padding: 30px 15px; background-color: #f3f4f6; width: 100%; box-sizing: border-box; }
+            .main { background-color: #ffffff; margin: 0 auto; width: 100%; max-width: 560px; padding: 32px; border-radius: 12px; box-sizing: border-box; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+            .brand-logo { font-size: 22px; font-weight: 800; color: #111; letter-spacing: -0.5px; margin-bottom: 20px; }
+            .header-badge { display: inline-block; background-color: #059669; color: #ffffff; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+            .title { font-size: 20px; font-weight: 700; color: #111827; margin: 0 0 16px; }
+            .info-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            .info-table td { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f3f4f6; }
+            .info-label { font-weight: 600; color: #4b5563; width: 35%; }
+            .info-val { color: #111827; font-weight: 500; }
+            .footer { text-align: center; font-size: 11px; color: #9ca3af; margin-top: 28px; line-height: 1.5; }
+          </style>
+        </head>
+        <body>
+          <div class="wrapper">
+            <div class="main">
+              <div class="brand-logo">THE<span style="color: #e63946; font-weight: 800;">WELLNESS</span>LAB</div>
+              <div class="header-badge">Instant Order Alert</div>
+              <h2 class="title">New Order Received (#${shortId})</h2>
+              <p style="font-size: 14px; color: #4b5563; margin-top: 0;">A new order has been placed on the website.</p>
+              
+              <table class="info-table">
+                <tr>
+                  <td class="info-label">Order ID</td>
+                  <td class="info-val"><strong>#${shortId}</strong> (${order.id})</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Customer Name</td>
+                  <td class="info-val">${customerName}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Email</td>
+                  <td class="info-val">${customerEmail !== "N/A" ? `<a href="mailto:${customerEmail}" style="color: #2563eb; text-decoration: none;">${customerEmail}</a>` : "N/A"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Phone</td>
+                  <td class="info-val">${customerPhone !== "N/A" ? `<a href="tel:${customerPhone}" style="color: #2563eb; text-decoration: none;">${customerPhone}</a>` : "N/A"}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Delivery Address</td>
+                  <td class="info-val">${order.address || "N/A"}${order.city ? `, ${order.city}` : ""}${order.pincode ? `, ${order.pincode}` : ""}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Payment Method</td>
+                  <td class="info-val"><span style="background-color: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase;">${order.paymentMethod || "COD"}</span></td>
+                </tr>
+                <tr>
+                  <td class="info-label">Payment Status</td>
+                  <td class="info-val">${order.paymentStatus === 'paid' ? '<span style="color: #16a34a; font-weight: 700;">PAID</span>' : '<span style="color: #d97706; font-weight: 600;">PENDING</span>'}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Order Status</td>
+                  <td class="info-val"><strong>${order.status || "PENDING"}</strong></td>
+                </tr>
+                <tr>
+                  <td class="info-label">Total Amount</td>
+                  <td class="info-val" style="font-size: 16px; font-weight: 800; color: #111827;">${totalPriceFormatted}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">Placed At</td>
+                  <td class="info-val">${new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai", dateStyle: "medium", timeStyle: "short" })} (GST)</td>
+                </tr>
+              </table>
+
+              <div style="margin-top: 24px;">
+                <div style="font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Order Items</div>
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; background-color: #f9fafb; border-radius: 6px; overflow: hidden; border: 1px solid #e5e7eb;">
+                  <thead>
+                    <tr style="background-color: #f3f4f6;">
+                      <th style="padding: 8px 12px; text-align: left; font-size: 12px; color: #4b5563;">Item</th>
+                      <th style="padding: 8px 12px; text-align: center; font-size: 12px; color: #4b5563;">Qty</th>
+                      <th style="padding: 8px 12px; text-align: right; font-size: 12px; color: #4b5563;">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${itemsHtml}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style="margin-top: 28px; text-align: center;">
+                <a href="https://thewellnesslab.ae/admin/orders" style="background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-size: 13px; font-weight: 600; display: inline-block;">View Order in Admin Portal →</a>
+              </div>
+
+              <div class="footer">
+                Automated Order Notification System — THE WELLNESS LAB<br>
+                This notification was sent based on your Order Notification settings.
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`Order notification email successfully sent to: ${recipients.join(", ")}`);
+  } catch (error) {
+    console.error("Error sending order notification email:", error);
+  }
+};
+

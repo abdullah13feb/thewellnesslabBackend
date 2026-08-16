@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
-import { sendOrderConfirmationEmail } from "../lib/email.js";
+import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
@@ -10,6 +10,61 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
 });
 
 const router = Router();
+
+// --- Notification Config Routes ---
+
+// Get order email notification configuration
+router.get("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
+  try {
+    let setting = await prisma.setting.findUnique({
+      where: { key: "order_notification_config" },
+    });
+
+    if (!setting || !setting.value) {
+      // Fallback to lead_notification_config if order_notification_config is not set
+      setting = await prisma.setting.findUnique({
+        where: { key: "lead_notification_config" },
+      });
+    }
+
+    let config = { enabled: false, recipientEmails: "", emailSubject: "" };
+    if (setting?.value) {
+      try {
+        config = JSON.parse(setting.value);
+      } catch (e) {
+        console.error("Error parsing order notification config:", e);
+      }
+    }
+
+    res.json({ success: true, data: config });
+  } catch (error) {
+    console.error("Error fetching order notification config:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
+
+// Update order email notification configuration
+router.post("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
+  try {
+    const { enabled, recipientEmails, emailSubject } = req.body;
+    const configValue = JSON.stringify({
+      enabled: Boolean(enabled),
+      recipientEmails: String(recipientEmails || "").trim(),
+      emailSubject: String(emailSubject || "").trim(),
+    });
+
+    const setting = await prisma.setting.upsert({
+      where: { key: "order_notification_config" },
+      update: { value: configValue },
+      create: { key: "order_notification_config", value: configValue },
+    });
+
+    res.json({ success: true, data: JSON.parse(setting.value) });
+  } catch (error) {
+    console.error("Error updating order notification config:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
 
 // GET all orders (Admin sees all, User sees own)
 router.get("/", requireAuthOrApiKey, async (req: Request, res: Response<ApiResponse<any>>) => {
@@ -316,6 +371,11 @@ router.post("/verify-payment", async (req: Request, res: Response) => {
           console.error("Failed to send order confirmation email:", emailErr);
         }
 
+        // Send Admin Order Notification Alert
+        sendOrderNotificationEmail(order).catch((err) => {
+          console.error("Failed to send order notification email on verify-payment:", err);
+        });
+
         return res.json({ success: true, order });
       }
     }
@@ -490,6 +550,11 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
         console.error("Failed to send order confirmation email:", emailErr);
       }
     }
+
+    // Send Admin Order Notification Alert asynchronously
+    sendOrderNotificationEmail(order).catch((err) => {
+      console.error("Failed to send order notification email on order create:", err);
+    });
 
     res.status(201).json({
       success: true,
