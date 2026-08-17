@@ -34,6 +34,31 @@ if (missingKeys.length > 0) {
 
 const router = express.Router();
 
+// Generate Cloudinary upload signature for direct browser uploads (bypasses API Gateway 6MB limit)
+router.get("/signature", (req: Request, res: Response) => {
+    try {
+        const timestamp = Math.round(new Date().getTime() / 1000);
+        const folder = "radiant-aura";
+        const signature = cloudinary.utils.api_sign_request(
+            { timestamp, folder },
+            process.env.CLOUDINARY_API_SECRET || ""
+        );
+        res.json({
+            success: true,
+            data: {
+                signature,
+                timestamp,
+                cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+                apiKey: process.env.CLOUDINARY_API_KEY,
+                folder,
+            },
+        });
+    } catch (error: any) {
+        console.error("Signature error:", error);
+        res.status(500).json({ success: false, error: error.message || "Failed to generate upload signature" });
+    }
+});
+
 // Configure Cloudinary Storage with dynamic resource types (raw for docs/PDFs, video/image for media)
 const storage = new CloudinaryStorage({
     cloudinary,

@@ -117,4 +117,6 @@ app.use((err: any, req: any, res: any, next: any) => {
 });
 
 // Export Lambda handler wrapped with serverless-http
-export const handler = serverless(app);
+export const handler = serverless(app, {
+  binary: ["multipart/form-data", "image/*", "video/*", "application/pdf", "*/*"]
+});

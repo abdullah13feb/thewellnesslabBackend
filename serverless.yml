@@ -11,6 +11,11 @@ provider:
   stage: dev
   timeout: 30
   memorySize: 512
+  apiGateway:
+    binaryMediaTypes:
+      - 'multipart/form-data'
+      - 'image/*'
+      - '*/*'
   environment:
     DATABASE_URL: ${env:DATABASE_URL, ''}
     DIRECT_URL: ${env:DIRECT_URL, ''}
