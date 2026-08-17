@@ -372,9 +372,11 @@ router.post("/verify-payment", async (req: Request, res: Response) => {
         }
 
         // Send Admin Order Notification Alert
-        sendOrderNotificationEmail(order).catch((err) => {
+        try {
+          await sendOrderNotificationEmail(order);
+        } catch (err) {
           console.error("Failed to send order notification email on verify-payment:", err);
-        });
+        }
 
         return res.json({ success: true, order });
       }
@@ -551,10 +553,12 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
       }
     }
 
-    // Send Admin Order Notification Alert asynchronously
-    sendOrderNotificationEmail(order).catch((err) => {
+    // Send Admin Order Notification Alert (awaited for AWS Lambda serverless execution)
+    try {
+      await sendOrderNotificationEmail(order);
+    } catch (err) {
       console.error("Failed to send order notification email on order create:", err);
-    });
+    }
 
     res.status(201).json({
       success: true,

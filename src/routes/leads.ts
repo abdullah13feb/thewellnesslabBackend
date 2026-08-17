@@ -137,10 +137,12 @@ router.post("/public", async (req, res) => {
       },
     });
 
-    // Send email notification asynchronously
-    sendLeadNotificationEmail(lead).catch((err) => {
+    // Send email notification safely (awaited for AWS Lambda serverless execution)
+    try {
+      await sendLeadNotificationEmail(lead);
+    } catch (err) {
       console.error("Failed to send lead notification email for public lead:", err);
-    });
+    }
 
     res.status(201).json({ success: true, data: lead });
   } catch (error) {
@@ -172,10 +174,12 @@ router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => 
       },
     });
 
-    // Send email notification asynchronously
-    sendLeadNotificationEmail(lead).catch((err) => {
+    // Send email notification safely (awaited for AWS Lambda serverless execution)
+    try {
+      await sendLeadNotificationEmail(lead);
+    } catch (err) {
       console.error("Failed to send lead notification email for admin lead:", err);
-    });
+    }
 
     res.status(201).json({ success: true, data: lead });
   } catch (error) {
