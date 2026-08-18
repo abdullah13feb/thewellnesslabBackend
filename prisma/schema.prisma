@@ -581,4 +581,83 @@ model Review {
   updatedAt   DateTime @updatedAt
 }
 
+model CtwaCreativeMapping {
+  id           String   @id @default(cuid())
+  creativeName String
+  adId         String
+  creativeId   String   @default("")
+  campaign     String   @default("")
+  adSet        String   @default("")
+  product      String
+  language     String
+  ctaType      String   @default("Click to WhatsApp")
+  flowId       String
+  flowName     String
+  status       String   @default("Active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CtwaMessageFlow {
+  id           String   @id @default(cuid())
+  flowName     String
+  creativeId   String   @default("")
+  creativeName String   @default("")
+  product      String
+  language     String
+  nodes        Json
+  edges        Json     @default("[]")
+  status       String   @default("Draft")
+  nodeCount    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CtwaWebhookEvent {
+  id               String   @id @default(cuid())
+  timestamp        String
+  event            String   @default("message.received")
+  phoneNumber      String
+  customerName     String?
+  messageText      String   @db.Text
+  adId             String   @default("")
+  creativeName     String   @default("")
+  product          String   @default("")
+  language         String   @default("")
+  flowId           String   @default("")
+  flowName         String   @default("")
+  currentNodeId    String   @default("")
+  currentNodeLabel String   @default("")
+  status           String   @default("Processed")
+  timeline         Json
+  rawPayload       Json?
+  createdAt        DateTime @default(now())
+}
+
+model CtwaMessageLog {
+  id             String   @id @default(cuid())
+  timestamp      String
+  phoneNumber    String
+  direction      String
+  messageContent String   @db.Text
+  creativeName   String   @default("")
+  flowName       String   @default("")
+  nodeId         String   @default("")
+  nodeLabel      String   @default("")
+  status         String   @default("Sent")
+  createdAt      DateTime @default(now())
+}
+
+model CtwaGowaConfig {
+  id                 String   @id @default("default")
+  instanceId         String   @default("i-095cd57fc2f306239")
+  publicIp           String   @default("3.110.175.249")
+  privateIp          String   @default("172.31.14.210")
+  port               String   @default("3000")
+  gowaApiUrl         String   @default("http://3.110.175.249:3000")
+  webhookUrl         String   @default("https://api.thewellnesslab.ae/api/ctwa/webhook")
+  webhookVerifyToken String   @default("wellnesslab_ctwa_token")
+  updatedAt          DateTime @updatedAt
+}
+
 

@@ -35,6 +35,7 @@ import emailTrackingRoutes from "./routes/email-tracking.js";
 import { startReplyTracker } from "./services/reply-tracker.service.js";
 import chatRoutes from "./routes/chat.js";
 import reviewRoutes from "./routes/reviews.js";
+import ctwaRoutes from "./routes/ctwa.js";
 import { initSocketServer } from "./lib/socket.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -118,6 +119,7 @@ app.use("/api/email-templates", emailTemplateRoutes);
 app.use("/api/tracking", emailTrackingRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/ctwa", ctwaRoutes);
 
 // Health check
 app.get("/health", (req, res) => {

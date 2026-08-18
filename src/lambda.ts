@@ -32,6 +32,7 @@ import emailTemplateRoutes from "./routes/email-templates.js";
 import emailTrackingRoutes from "./routes/email-tracking.js";
 import chatRoutes from "./routes/chat.js";
 import reviewRoutes from "./routes/reviews.js";
+import ctwaRoutes from "./routes/ctwa.js";
 
 const currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 
@@ -100,6 +101,7 @@ app.use("/api/email-templates", emailTemplateRoutes);
 app.use("/api/tracking", emailTrackingRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/ctwa", ctwaRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
