@@ -55,6 +55,10 @@ provider:
     CTWA_GOWA_API_URL: ${env:CTWA_GOWA_API_URL, 'http://3.110.175.249:3000'}
     CTWA_WEBHOOK_URL: ${env:CTWA_WEBHOOK_URL, 'https://alb-backend.thewellnesslab.ae/api/ctwa/webhook'}
     CTWA_VERIFY_TOKEN: ${env:CTWA_VERIFY_TOKEN, 'wellnesslab_ctwa_token'}
+    GOWA_BASIC_USER: ${env:GOWA_BASIC_USER, 'user1'}
+    GOWA_BASIC_PASS: ${env:GOWA_BASIC_PASS, 'pass1'}
+    GOWA_DEVICE_ID: ${env:GOWA_DEVICE_ID, 'adil'}
+    AUTO_REPLY_DELAY_MS: ${env:AUTO_REPLY_DELAY_MS, '2000'}
 
 custom:
   esbuild:

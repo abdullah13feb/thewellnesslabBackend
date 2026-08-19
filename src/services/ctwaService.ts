@@ -157,7 +157,7 @@ export const ctwaBackendService = {
       gowaApiUrl: process.env.CTWA_GOWA_API_URL || 'http://3.110.175.249:3000',
       webhookUrl: process.env.CTWA_WEBHOOK_URL || 'https://alb-backend.thewellnesslab.ae/api/ctwa/webhook',
       webhookVerifyToken: process.env.CTWA_VERIFY_TOKEN || 'wellnesslab_ctwa_token',
-      enableDefaultFallback: false,
+      enableDefaultFallback: true,
       defaultFlowId: '',
       defaultFlowName: '',
       status: 'Connected',
@@ -179,7 +179,7 @@ export const ctwaBackendService = {
           enableDefaultFallback: data.enableDefaultFallback ?? false,
           defaultFlowId: data.defaultFlowId || '',
           defaultFlowName: data.defaultFlowName || '',
-        },
+        } as any,
         create: {
           id: 'default',
           instanceId: data.instanceId || 'i-095cd57fc2f306239',
@@ -192,7 +192,7 @@ export const ctwaBackendService = {
           enableDefaultFallback: data.enableDefaultFallback ?? false,
           defaultFlowId: data.defaultFlowId || '',
           defaultFlowName: data.defaultFlowName || '',
-        },
+        } as any,
       });
     } catch (e) {
       return data;
@@ -209,21 +209,36 @@ export const ctwaBackendService = {
       finalMessage = `${text}\n\n${buttonOptions}\n\n_Reply with option number or text_`;
     }
 
+    const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
+    const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
+    const deviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'adil';
+
+    const reqConfig: any = {
+      timeout: 5000,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': deviceId,
+      },
+    };
+    if (authUser && authPass) {
+      reqConfig.auth = { username: authUser, password: authPass };
+    }
+
     try {
       console.log(`[GOWA EC2 ${cfg.publicIp}:${cfg.port}] Sending WhatsApp to ${formattedPhone}`);
       const response = await axios.post(
         `${cfg.gowaApiUrl}/send/message`,
         {
-          phone: formattedPhone,
+          phone: formattedPhone.includes('@') ? formattedPhone : `${formattedPhone}@s.whatsapp.net`,
           message: finalMessage,
           buttons: buttons?.map((b) => ({ id: b.id, text: b.text })),
         },
-        { timeout: 5000 }
+        reqConfig
       );
       return { success: true, data: response.data };
     } catch (err: any) {
-      console.warn(`[GOWA EC2 Call] ${cfg.gowaApiUrl} request error: ${err.message}. Simulating successful delivery.`);
-      return { success: true, simulated: true };
+      console.error(`❌ [GOWA EC2 Call Error]: ${cfg.gowaApiUrl}/send/message failed: ${err.message}`);
+      return { success: false, error: err.message };
     }
   },
 
@@ -265,11 +280,45 @@ export const ctwaBackendService = {
       flow = flows.find((f: MessageFlow) => f.id === mapping?.flowId || f.flowName === mapping?.flowName);
     }
 
+    if (innerPayload.is_from_me) {
+      console.log('ℹ️ [CTWA Webhook] Ignoring outgoing message sent by me (is_from_me: true).');
+      return { id: `wh-${Date.now()}`, status: 'Ignored', reason: 'is_from_me is true' };
+    }
+
     if (!flow) {
-      // No specific mapping matched: check if Default Fallback Flow is enabled
-      const cfg = await ctwaBackendService.getGOWAConfig();
-      if (cfg.enableDefaultFallback && cfg.defaultFlowId) {
-        flow = flows.find((f: MessageFlow) => f.id === cfg.defaultFlowId || f.flowName === cfg.defaultFlowName);
+      // No specific ad mapping matched: check if Default Fallback Flow is enabled
+      const cfg: any = await ctwaBackendService.getGOWAConfig();
+
+      if (cfg.enableDefaultFallback) {
+        // Intent / Keyword Filter Check configured from Admin Portal UI
+        const rawKeywords = cfg.intentKeywords || process.env.DEFAULT_FLOW_INTENT_KEYWORDS || '';
+        const keywords = String(rawKeywords).split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
+
+        const cleanMsg = messageText.toLowerCase().trim();
+        const isSessionActive = !!userSessionState[phoneNumber];
+
+        // If intent keywords are specified, match incoming text or active session.
+        const isIntentMatched = isSessionActive || keywords.length === 0 || keywords.some((kw: string) => cleanMsg === kw || cleanMsg.includes(kw));
+
+        if (isIntentMatched) {
+          const defaultTarget = cfg.defaultFlowId || cfg.defaultFlowName;
+
+          if (defaultTarget) {
+            flow = flows.find(
+              (f: MessageFlow) =>
+                f.id === defaultTarget ||
+                f.flowName === defaultTarget ||
+                f.id.toLowerCase() === String(defaultTarget).toLowerCase() ||
+                f.flowName.toLowerCase() === String(defaultTarget).toLowerCase()
+            );
+          }
+
+          if (!flow && flows.length > 0) {
+            flow = flows.find((f: MessageFlow) => f.status === 'Active') || flows[0];
+          }
+        } else {
+          console.log(`ℹ️ [CTWA Webhook] Incoming message "${messageText}" does not match configured intent keywords (${keywords.join(', ')}). Skipping auto-reply.`);
+        }
       }
     }
 
@@ -340,6 +389,12 @@ export const ctwaBackendService = {
       message: `Sending node "${currentNodeLabel}" via GOWA EC2 Server (3.110.175.249:3000)`,
       type: 'bot_sent',
     });
+
+    // Natural human typing delay (default 1.5 seconds)
+    const delayMs = Number(process.env.AUTO_REPLY_DELAY_MS || 1500);
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
 
     // Send Message via GOWA EC2
     await ctwaBackendService.sendGOWAMessage(phoneNumber, replyText, replyButtons);
