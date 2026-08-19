@@ -157,6 +157,9 @@ export const ctwaBackendService = {
       gowaApiUrl: process.env.CTWA_GOWA_API_URL || 'http://3.110.175.249:3000',
       webhookUrl: process.env.CTWA_WEBHOOK_URL || 'https://alb-backend.thewellnesslab.ae/api/ctwa/webhook',
       webhookVerifyToken: process.env.CTWA_VERIFY_TOKEN || 'wellnesslab_ctwa_token',
+      enableDefaultFallback: false,
+      defaultFlowId: '',
+      defaultFlowName: '',
       status: 'Connected',
     };
   },
@@ -173,6 +176,9 @@ export const ctwaBackendService = {
           gowaApiUrl: data.gowaApiUrl,
           webhookUrl: data.webhookUrl,
           webhookVerifyToken: data.webhookVerifyToken,
+          enableDefaultFallback: data.enableDefaultFallback ?? false,
+          defaultFlowId: data.defaultFlowId || '',
+          defaultFlowName: data.defaultFlowName || '',
         },
         create: {
           id: 'default',
@@ -183,6 +189,9 @@ export const ctwaBackendService = {
           gowaApiUrl: data.gowaApiUrl || 'http://3.110.175.249:3000',
           webhookUrl: data.webhookUrl || 'https://alb-backend.thewellnesslab.ae/api/ctwa/webhook',
           webhookVerifyToken: data.webhookVerifyToken || 'wellnesslab_ctwa_token',
+          enableDefaultFallback: data.enableDefaultFallback ?? false,
+          defaultFlowId: data.defaultFlowId || '',
+          defaultFlowName: data.defaultFlowName || '',
         },
       });
     } catch (e) {
@@ -243,13 +252,29 @@ export const ctwaBackendService = {
       mapping = mappings.find((m: CreativeMapping) => m.adId.includes(adId) || adId.includes(m.adId));
     }
 
-    if (!mapping) {
-      mapping = mappings.find((m: CreativeMapping) => m.status === 'Active') || mappings[0];
+    let flow: MessageFlow | undefined;
+    const flows = await ctwaBackendService.getFlows();
+
+    if (mapping) {
+      flow = flows.find((f: MessageFlow) => f.id === mapping?.flowId || f.flowName === mapping?.flowName);
     }
 
-    // Find Message Flow
-    const flows = await ctwaBackendService.getFlows();
-    let flow = flows.find((f: MessageFlow) => f.id === mapping?.flowId || f.flowName === mapping?.flowName) || flows[0];
+    if (!flow) {
+      // No specific mapping matched: check if Default Fallback Flow is enabled
+      const cfg = await ctwaBackendService.getGOWAConfig();
+      if (cfg.enableDefaultFallback && cfg.defaultFlowId) {
+        flow = flows.find((f: MessageFlow) => f.id === cfg.defaultFlowId || f.flowName === cfg.defaultFlowName);
+      }
+    }
+
+    if (!flow) {
+      console.log(`ℹ️ [CTWA Webhook] No creative mapping matched for Ad ID "${adId || 'N/A'}" and Default Fallback Flow is DISABLED. Skipping auto-reply.`);
+      return {
+        id: `wh-${Date.now()}`,
+        status: 'Ignored',
+        reason: 'No creative mapping matched and Default Fallback Flow is disabled',
+      };
+    }
 
     const timeline: WebhookTimelineItem[] = [
       { timestamp: timeStr, actor: 'Customer', message: messageText, type: 'customer_msg' },
