@@ -9,16 +9,27 @@ const router = Router();
  * @access  Public / Server-to-Server
  */
 router.post('/webhook', async (req: Request, res: Response) => {
-  try {    console.log('📥 [CTWA Webhook Received from GOWA EC2]:', JSON.stringify(req.body, null, 2));
+  try {
+    console.log('📥 [CTWA Webhook Received from GOWA EC2]:', JSON.stringify(req.body, null, 2));
 
-    const payload = req.body || {};
+    const body = req.body || {};
+    const innerPayload = body.payload || body.data || body;
+    const referral = innerPayload.referral || body.referral || {};
+
+    const rawPhone = innerPayload.from || innerPayload.chat_id || body.phone || body.from || body.phoneNumber;
+    const message = innerPayload.body || body.message || body.messageText || body.body;
+    const customerName = innerPayload.from_name || innerPayload.pushName || body.customerName || body.name;
+    const adId = referral.source_id || referral.ref || body.adId || body.ad_id;
+    const creativeName = referral.ad_title || body.creativeName || body.creative_name;
+
     const result = await ctwaBackendService.processIncomingWebhook({
-      phone: payload.phone || payload.from || payload.phoneNumber,
-      message: payload.message || payload.body || payload.messageText,
-      adId: payload.adId || payload.ad_id,
-      creativeName: payload.creativeName || payload.creative_name,
-      customerName: payload.name || payload.pushName,
-      rawPayload: payload,
+      phone: rawPhone,
+      message,
+      adId,
+      creativeName,
+      customerName,
+      referral,
+      rawPayload: body,
     });
 
     return res.status(200).json({

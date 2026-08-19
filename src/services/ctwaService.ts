@@ -213,25 +213,35 @@ export const ctwaBackendService = {
   },
 
   processIncomingWebhook: async (payload: any) => {
-    const dataObj = payload?.data || payload?.rawPayload?.data || payload || {};
-    const rawPhone = payload.phone || payload.from || payload.phoneNumber || dataObj.from || dataObj.phone || dataObj.sender || '+971500000000';
+    const rawPayload = payload?.rawPayload || payload || {};
+    const innerPayload = rawPayload?.payload || rawPayload?.data || rawPayload || {};
+    const referral = payload?.referral || innerPayload?.referral || rawPayload?.referral || {};
+
+    const rawPhone = payload.phone || innerPayload.from || innerPayload.chat_id || rawPayload.from || rawPayload.phone || rawPayload.phoneNumber || '+971500000000';
     const phoneNumber = String(rawPhone).includes('@') ? String(rawPhone).split('@')[0] : String(rawPhone);
 
-    let msgContent = payload.message || payload.body || payload.messageText || dataObj.body || dataObj.message || '';
+    let msgContent = payload.message || innerPayload.body || rawPayload.message || rawPayload.body || '';
     if (typeof msgContent === 'object' && msgContent !== null) {
       msgContent = msgContent.conversation || msgContent.text || msgContent.caption || JSON.stringify(msgContent);
     }
     const messageText = String(msgContent).trim();
-    const customerName = payload.customerName || dataObj.pushName || dataObj.name || 'WhatsApp Customer';
+    const customerName = payload.customerName || innerPayload.from_name || innerPayload.pushName || rawPayload.name || 'WhatsApp Customer';
     const timeStr = new Date().toLocaleTimeString();
 
-    // Find Creative Mapping
+    const adId = String(payload.adId || referral.source_id || referral.ref || rawPayload.adId || rawPayload.ad_id || '').trim();
+    const creativeName = String(payload.creativeName || referral.ad_title || rawPayload.creativeName || '').trim();
+
+    // Find Creative Mapping matching adId or source_id or creativeName
     const mappings = await ctwaBackendService.getMappings();
     let mapping = mappings.find(
       (m: CreativeMapping) =>
-        (payload.adId && m.adId === payload.adId) ||
-        (payload.creativeName && m.creativeName.toLowerCase() === payload.creativeName.toLowerCase())
+        (adId && (m.adId === adId || m.creativeId === adId)) ||
+        (creativeName && m.creativeName.toLowerCase() === creativeName.toLowerCase())
     );
+
+    if (!mapping && adId) {
+      mapping = mappings.find((m: CreativeMapping) => m.adId.includes(adId) || adId.includes(m.adId));
+    }
 
     if (!mapping) {
       mapping = mappings.find((m: CreativeMapping) => m.status === 'Active') || mappings[0];
