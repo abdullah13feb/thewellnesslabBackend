@@ -592,12 +592,38 @@ export const ctwaBackendService = {
     else mappingsStore.unshift(updated);
 
     try {
-      await prisma.ctwaCreativeMapping.upsert({
+      const dbSaved = await prisma.ctwaCreativeMapping.upsert({
         where: { id: updated.id },
-        update: updated,
-        create: updated,
+        update: {
+          creativeName: updated.creativeName,
+          adId: updated.adId,
+          creativeId: updated.creativeId,
+          campaign: updated.campaign,
+          adSet: updated.adSet,
+          product: updated.product,
+          language: updated.language,
+          ctaType: updated.ctaType,
+          flowId: updated.flowId,
+          flowName: updated.flowName,
+          status: updated.status,
+        },
+        create: {
+          id: updated.id,
+          creativeName: updated.creativeName,
+          adId: updated.adId,
+          creativeId: updated.creativeId,
+          campaign: updated.campaign,
+          adSet: updated.adSet,
+          product: updated.product,
+          language: updated.language,
+          ctaType: updated.ctaType,
+          flowId: updated.flowId,
+          flowName: updated.flowName,
+          status: updated.status,
+        },
       });
-      console.log(`[Supabase DB] Saved Creative Mapping "${updated.creativeName}" ➔ "${updated.flowName}" permanently`);
+      console.log(`[Supabase DB] Saved Creative Mapping "${dbSaved.creativeName}" ➔ "${dbSaved.flowName}" permanently`);
+      return dbSaved as any;
     } catch (e: any) {
       console.error('[Supabase DB saveMapping Error]:', e.message);
     }
@@ -700,12 +726,34 @@ export const ctwaBackendService = {
     else flowsStore.unshift(updated);
 
     try {
-      await prisma.ctwaMessageFlow.upsert({
+      const dbSaved = await prisma.ctwaMessageFlow.upsert({
         where: { id: updated.id },
-        update: updated as any,
-        create: updated as any,
+        update: {
+          flowName: updated.flowName,
+          creativeId: updated.creativeId,
+          creativeName: updated.creativeName,
+          product: updated.product,
+          language: updated.language,
+          nodes: updated.nodes as any,
+          edges: updated.edges as any,
+          status: updated.status,
+          nodeCount: updated.nodeCount,
+        },
+        create: {
+          id: updated.id,
+          flowName: updated.flowName,
+          creativeId: updated.creativeId,
+          creativeName: updated.creativeName,
+          product: updated.product,
+          language: updated.language,
+          nodes: updated.nodes as any,
+          edges: updated.edges as any,
+          status: updated.status,
+          nodeCount: updated.nodeCount,
+        },
       });
-      console.log(`[Supabase DB] Saved Message Flow "${updated.flowName}" (ID: ${updated.id}) permanently`);
+      console.log(`[Supabase DB] Saved Message Flow "${dbSaved.flowName}" (ID: ${dbSaved.id}) permanently`);
+      return dbSaved as any;
     } catch (e: any) {
       console.error('[Supabase DB saveFlow Error]:', e.message);
     }

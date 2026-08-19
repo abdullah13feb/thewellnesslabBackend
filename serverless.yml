@@ -66,14 +66,17 @@ custom:
     format: cjs
     outputFileExtension: .js
     external:
+      - '@prisma/client'
       - '@prisma/engines'
+      - '.prisma/client'
 
 package:
   individually: false
   patterns:
     - 'package.json'
-    - 'node_modules/.prisma/client/libquery_engine-rhel-openssl-3.0.x.so.node'
-    - 'node_modules/.prisma/client/schema.prisma'
+    - 'node_modules/@prisma/**'
+    - 'node_modules/.prisma/**'
+    - 'prisma/schema.prisma'
 
 functions:
   api:
