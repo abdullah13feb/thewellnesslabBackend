@@ -74,9 +74,16 @@ package:
   individually: false
   patterns:
     - 'package.json'
-    - 'node_modules/@prisma/**'
-    - 'node_modules/.prisma/**'
     - 'prisma/schema.prisma'
+    - 'node_modules/@prisma/client/**'
+    - 'node_modules/.prisma/client/schema.prisma'
+    - 'node_modules/.prisma/client/index.js'
+    - 'node_modules/.prisma/client/default.js'
+    - 'node_modules/.prisma/client/libquery_engine-rhel-openssl-3.0.x.so.node'
+    - '!node_modules/@prisma/engines/**'
+    - '!node_modules/.prisma/client/libquery_engine-windows*'
+    - '!node_modules/.prisma/client/libquery_engine-darwin*'
+    - '!node_modules/.prisma/client/libquery_engine-debian*'
 
 functions:
   api:
