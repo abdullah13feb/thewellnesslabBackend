@@ -515,10 +515,11 @@ export const ctwaBackendService = {
     try {
       const dbMappings = await prisma.ctwaCreativeMapping.findMany({ orderBy: { updatedAt: 'desc' } });
       if (dbMappings && dbMappings.length > 0) {
+        mappingsStore = dbMappings as any;
         return dbMappings as any;
       }
-    } catch (e) {
-      // Safe DB fallback
+    } catch (e: any) {
+      console.error('[Supabase DB getMappings Error]:', e.message);
     }
     return mappingsStore;
   },
@@ -528,19 +529,19 @@ export const ctwaBackendService = {
     let flowName = data.flowName;
 
     // Check if flow already exists
-    let existingFlow = flowsStore.find((f) => f.id === flowId);
+    let existingFlow = await ctwaBackendService.getFlowById(flowId);
 
     // Auto-generate flow payload if no flowId provided or flow doesn't exist
     if (!flowId || !existingFlow) {
       flowId = flowId || `flow-${Date.now()}`;
-      flowName = flowName || `${(data.creativeName || 'AD').replace(/\s+/g, '_')}_${(data.product || 'PROD').replace(/\s+/g, '_')}_FLOW`;
+      flowName = flowName || `${(data.creativeName || 'AD').replace(/\s+/g, '_')}_FLOW`;
 
       existingFlow = {
         id: flowId,
         flowName,
         creativeId: data.creativeId || '',
         creativeName: data.creativeName || '',
-        product: data.product || 'REX ULTRA',
+        product: data.product || 'Default',
         language: data.language || 'English',
         status: 'Active',
         updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
@@ -555,10 +556,10 @@ export const ctwaBackendService = {
               isStart: true,
               nodeType: 'start',
               messageType: 'Interactive',
-              messageContent: `Hello 👋\n\nThanks for your interest in ${data.product || 'our product'}.\nHow can we help you today?`,
+              messageContent: `Hello 👋\n\nThanks for reaching out!\nHow can we help you today?`,
               buttons: [
-                { id: 'b1', text: 'Product Information', action: 'Go To Node', targetNodeId: '' },
-                { id: 'b2', text: 'Pricing & Offers', action: 'Go To Node', targetNodeId: '' },
+                { id: 'b1', text: 'Option 1', action: 'Go To Node', targetNodeId: '' },
+                { id: 'b2', text: 'Option 2', action: 'Go To Node', targetNodeId: '' },
               ],
             },
           },
@@ -566,19 +567,7 @@ export const ctwaBackendService = {
         edges: [],
       };
 
-      const idxF = flowsStore.findIndex((f) => f.id === flowId);
-      if (idxF >= 0) flowsStore[idxF] = existingFlow;
-      else flowsStore.unshift(existingFlow);
-
-      try {
-        await prisma.ctwaMessageFlow.upsert({
-          where: { id: flowId },
-          update: existingFlow as any,
-          create: existingFlow as any,
-        });
-      } catch (e) {
-        // Safe DB fallback
-      }
+      await ctwaBackendService.saveFlow(existingFlow);
     }
 
     const updated: CreativeMapping = {
@@ -588,7 +577,7 @@ export const ctwaBackendService = {
       creativeId: data.creativeId || 'cr-100',
       campaign: data.campaign || 'Campaign',
       adSet: data.adSet || 'Ad Set',
-      product: data.product || 'REX ULTRA',
+      product: data.product || 'Default',
       language: data.language || 'English',
       ctaType: data.ctaType || 'Click to WhatsApp',
       flowId: flowId,
@@ -608,8 +597,9 @@ export const ctwaBackendService = {
         update: updated,
         create: updated,
       });
-    } catch (e) {
-      // Safe DB fallback
+      console.log(`[Supabase DB] Saved Creative Mapping "${updated.creativeName}" ➔ "${updated.flowName}" permanently`);
+    } catch (e: any) {
+      console.error('[Supabase DB saveMapping Error]:', e.message);
     }
 
     return updated;
@@ -619,8 +609,9 @@ export const ctwaBackendService = {
     mappingsStore = mappingsStore.filter((m) => m.id !== id);
     try {
       await prisma.ctwaCreativeMapping.delete({ where: { id } });
-    } catch (e) {
-      // Safe DB fallback
+      console.log(`[Supabase DB] Deleted Creative Mapping ID: ${id}`);
+    } catch (e: any) {
+      console.error('[Supabase DB deleteMapping Error]:', e.message);
     }
     return true;
   },
@@ -629,15 +620,23 @@ export const ctwaBackendService = {
     try {
       const dbFlows = await prisma.ctwaMessageFlow.findMany({ orderBy: { updatedAt: 'desc' } });
       if (dbFlows && dbFlows.length > 0) {
+        flowsStore = dbFlows as any;
         return dbFlows as any;
       }
-    } catch (e) {
-      // Safe DB fallback
+    } catch (e: any) {
+      console.error('[Supabase DB getFlows Error]:', e.message);
     }
     return flowsStore;
   },
 
   getFlowById: async (id: string) => {
+    try {
+      const dbFlow = await prisma.ctwaMessageFlow.findUnique({ where: { id } });
+      if (dbFlow) return dbFlow as any;
+    } catch (e: any) {
+      console.error('[Supabase DB getFlowById Error]:', e.message);
+    }
+
     const flows = await ctwaBackendService.getFlows();
     let flow = flows.find((f: MessageFlow) => f.id === id);
 
@@ -648,7 +647,7 @@ export const ctwaBackendService = {
         flowName: `FLOW_${id}`,
         creativeId: '',
         creativeName: 'Ad Creative',
-        product: 'REX ULTRA',
+        product: 'Default',
         language: 'English',
         status: 'Active',
         updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
@@ -663,16 +662,16 @@ export const ctwaBackendService = {
               isStart: true,
               nodeType: 'start',
               messageType: 'Interactive',
-              messageContent: 'Hello 👋\n\nThanks for your interest.\nWhat would you like to know?',
+              messageContent: 'Hello 👋\n\nThanks for reaching out!\nHow can we help you today?',
               buttons: [
-                { id: 'b1', text: 'Product Info', action: 'Go To Node', targetNodeId: '' },
+                { id: 'b1', text: 'Option 1', action: 'Go To Node', targetNodeId: '' },
               ],
             },
           },
         ],
         edges: [],
       };
-      flowsStore.push(flow);
+      await ctwaBackendService.saveFlow(flow);
     }
 
     return flow;
@@ -687,7 +686,7 @@ export const ctwaBackendService = {
       flowName: data.flowName || 'FLOW_NAME',
       creativeId: data.creativeId || '',
       creativeName: data.creativeName || '',
-      product: data.product || 'REX ULTRA',
+      product: data.product || 'Default',
       language: data.language || 'English',
       nodes: nodes as any,
       edges: edges as any,
@@ -706,8 +705,9 @@ export const ctwaBackendService = {
         update: updated as any,
         create: updated as any,
       });
-    } catch (e) {
-      // Safe DB fallback
+      console.log(`[Supabase DB] Saved Message Flow "${updated.flowName}" (ID: ${updated.id}) permanently`);
+    } catch (e: any) {
+      console.error('[Supabase DB saveFlow Error]:', e.message);
     }
 
     return updated;
@@ -717,8 +717,9 @@ export const ctwaBackendService = {
     flowsStore = flowsStore.filter((f) => f.id !== id);
     try {
       await prisma.ctwaMessageFlow.delete({ where: { id } });
-    } catch (e) {
-      // Safe DB fallback
+      console.log(`[Supabase DB] Deleted Message Flow ID: ${id}`);
+    } catch (e: any) {
+      console.error('[Supabase DB deleteFlow Error]:', e.message);
     }
     return true;
   },
@@ -729,8 +730,8 @@ export const ctwaBackendService = {
       if (dbWebhooks && dbWebhooks.length > 0) {
         return dbWebhooks as any;
       }
-    } catch (e) {
-      // Safe DB fallback
+    } catch (e: any) {
+      console.error('[Supabase DB getWebhooks Error]:', e.message);
     }
     return webhooksStore;
   },
@@ -746,9 +747,10 @@ export const ctwaBackendService = {
       if (dbLogs && dbLogs.length > 0) {
         return dbLogs as any;
       }
-    } catch (e) {
-      // Safe DB fallback
+    } catch (e: any) {
+      console.error('[Supabase DB getMessageLogs Error]:', e.message);
     }
     return messageLogsStore;
   },
 };
+
