@@ -50,6 +50,11 @@ provider:
     APIFY_API_TOKEN: ${env:APIFY_API_TOKEN, ''}
     APIFY_GOOGLE_MAPS_ACTOR: ${env:APIFY_GOOGLE_MAPS_ACTOR, ''}
     API_URL: ${env:API_URL, ''}
+    META_ACCESS_TOKEN: ${env:META_ACCESS_TOKEN, ''}
+    META_AD_ACCOUNT_ID: ${env:META_AD_ACCOUNT_ID, ''}
+    CTWA_GOWA_API_URL: ${env:CTWA_GOWA_API_URL, 'http://3.110.175.249:3000'}
+    CTWA_WEBHOOK_URL: ${env:CTWA_WEBHOOK_URL, 'https://alb-backend.thewellnesslab.ae/api/ctwa/webhook'}
+    CTWA_VERIFY_TOKEN: ${env:CTWA_VERIFY_TOKEN, 'wellnesslab_ctwa_token'}
 
 custom:
   esbuild:

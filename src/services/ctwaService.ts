@@ -394,11 +394,16 @@ export const ctwaBackendService = {
     };
   },
 
-  getCreatives: async () => creativesStore,
+  getCreatives: async () => {
+    if (creativesStore.length === 0) {
+      await ctwaBackendService.fetchFromMetaGraphApi();
+    }
+    return creativesStore;
+  },
 
   fetchFromMetaGraphApi: async (adAccountId?: string, accessToken?: string) => {
-    const token = accessToken || process.env.META_ACCESS_TOKEN;
-    const account = (adAccountId || process.env.META_AD_ACCOUNT_ID || '2006443683428321').replace(/^act_/, '');
+    const token = accessToken || process.env.META_ACCESS_TOKEN || process.env.USER_TOKEN;
+    const account = (adAccountId || process.env.META_AD_ACCOUNT_ID || '1600459627659244').replace(/^act_/, '');
 
     if (!token) {
       return {
