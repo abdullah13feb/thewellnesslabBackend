@@ -203,13 +203,19 @@ export const ctwaBackendService = {
     const cfg = await ctwaBackendService.getGOWAConfig();
     const formattedPhone = phone.replace(/[^0-9]/g, '');
 
+    let finalMessage = text;
+    if (buttons && buttons.length > 0) {
+      const buttonOptions = buttons.map((b, i) => `${i + 1}️⃣ ${b.text}`).join('\n');
+      finalMessage = `${text}\n\n${buttonOptions}\n\n_Reply with option number or text_`;
+    }
+
     try {
       console.log(`[GOWA EC2 ${cfg.publicIp}:${cfg.port}] Sending WhatsApp to ${formattedPhone}`);
       const response = await axios.post(
         `${cfg.gowaApiUrl}/send/message`,
         {
           phone: formattedPhone,
-          message: text,
+          message: finalMessage,
           buttons: buttons?.map((b) => ({ id: b.id, text: b.text })),
         },
         { timeout: 5000 }
@@ -300,7 +306,9 @@ export const ctwaBackendService = {
     if (session && flow && session.flowId === flow.id) {
       const prevNode = nodes.find((n) => n.id === session.currentNodeId);
       const matchedBtn = prevNode?.data?.buttons?.find(
-        (b) => b.text.toLowerCase() === messageText.toLowerCase()
+        (b, idx) =>
+          b.text.toLowerCase() === messageText.toLowerCase() ||
+          messageText.trim() === String(idx + 1)
       );
 
       if (matchedBtn && matchedBtn.targetNodeId) {
