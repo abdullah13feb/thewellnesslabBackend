@@ -281,8 +281,35 @@ export const ctwaBackendService = {
     }
 
     if (innerPayload.is_from_me) {
-      console.log('ℹ️ [CTWA Webhook] Ignoring outgoing message sent by me (is_from_me: true).');
-      return { id: `wh-${Date.now()}`, status: 'Ignored', reason: 'is_from_me is true' };
+      console.log('ℹ️ [CTWA Webhook] Outgoing message sent by Human Agent (is_from_me: true). Logging to Supabase...');
+      let lastLog = await prisma.ctwaMessageLog.findFirst({
+        where: { phoneNumber },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      try {
+        await prisma.ctwaMessageLog.create({
+          data: {
+            timestamp: timeStr,
+            phoneNumber,
+            customerName: customerName !== 'WhatsApp Customer' ? customerName : lastLog?.customerName || 'WhatsApp Customer',
+            direction: 'Outgoing',
+            messageContent: messageText,
+            adId: adId || lastLog?.adId || '',
+            creativeName: creativeName || lastLog?.creativeName || '',
+            campaign: lastLog?.campaign || '',
+            product: lastLog?.product || '',
+            flowName: 'Human Agent',
+            nodeId: 'human_reply',
+            nodeLabel: 'Human Agent Reply',
+            status: 'Sent',
+          },
+        });
+      } catch (e: any) {
+        console.error('[Supabase DB Human Agent Log Error]:', e.message);
+      }
+
+      return { id: `wh-${Date.now()}`, status: 'Logged', type: 'human_outgoing' };
     }
 
     if (!flow) {
@@ -323,11 +350,38 @@ export const ctwaBackendService = {
     }
 
     if (!flow) {
-      console.log(`ℹ️ [CTWA Webhook] No creative mapping matched for Ad ID "${adId || 'N/A'}" and Default Fallback Flow is DISABLED. Skipping auto-reply.`);
+      console.log(`ℹ️ [CTWA Webhook] No bot flow matched for Ad ID "${adId || 'N/A'}". Logging incoming customer message to Supabase...`);
+      let lastLog = await prisma.ctwaMessageLog.findFirst({
+        where: { phoneNumber },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      try {
+        await prisma.ctwaMessageLog.create({
+          data: {
+            timestamp: timeStr,
+            phoneNumber,
+            customerName: customerName !== 'WhatsApp Customer' ? customerName : lastLog?.customerName || 'WhatsApp Customer',
+            direction: 'Incoming',
+            messageContent: messageText,
+            adId: adId || lastLog?.adId || '',
+            creativeName: creativeName || lastLog?.creativeName || '',
+            campaign: lastLog?.campaign || '',
+            product: lastLog?.product || '',
+            flowName: 'Direct Chat',
+            nodeId: 'human_incoming',
+            nodeLabel: 'Human Chat / No Bot',
+            status: 'Received',
+          },
+        });
+      } catch (e: any) {
+        console.error('[Supabase DB Direct Chat Log Error]:', e.message);
+      }
+
       return {
         id: `wh-${Date.now()}`,
-        status: 'Ignored',
-        reason: 'No creative mapping matched and Default Fallback Flow is disabled',
+        status: 'Logged',
+        reason: 'Incoming message recorded without bot auto-reply',
       };
     }
 
@@ -455,10 +509,10 @@ export const ctwaBackendService = {
           timestamp: timeStr,
           event: 'message.received',
           phoneNumber,
-          customerName: payload.customerName || 'WhatsApp Customer',
+          customerName: payload.customerName || customerName || 'WhatsApp Customer',
           messageText,
-          adId: mapping?.adId || '',
-          creativeName: mapping?.creativeName || '',
+          adId: mapping?.adId || adId || '',
+          creativeName: mapping?.creativeName || creativeName || '',
           product: mapping?.product || '',
           language: mapping?.language || '',
           flowId: flow?.id || '',
@@ -470,8 +524,43 @@ export const ctwaBackendService = {
           rawPayload: payload.rawPayload || payload,
         },
       });
-    } catch (e) {
-      // Safe DB fallback
+
+      await prisma.ctwaMessageLog.createMany({
+        data: [
+          {
+            timestamp: timeStr,
+            phoneNumber,
+            customerName: payload.customerName || customerName || 'WhatsApp Customer',
+            direction: 'Incoming',
+            messageContent: messageText,
+            adId: mapping?.adId || adId || '',
+            creativeName: mapping?.creativeName || creativeName || '',
+            campaign: mapping?.campaign || '',
+            product: mapping?.product || '',
+            flowName: flow?.flowName || '',
+            nodeId: targetNode?.id || '',
+            nodeLabel: currentNodeLabel,
+            status: 'Received',
+          },
+          {
+            timestamp: timeStr,
+            phoneNumber,
+            customerName: payload.customerName || customerName || 'WhatsApp Customer',
+            direction: 'Outgoing',
+            messageContent: replyText,
+            adId: mapping?.adId || adId || '',
+            creativeName: mapping?.creativeName || creativeName || '',
+            campaign: mapping?.campaign || '',
+            product: mapping?.product || '',
+            flowName: flow?.flowName || '',
+            nodeId: targetNode?.id || '',
+            nodeLabel: currentNodeLabel,
+            status: 'Sent',
+          },
+        ],
+      });
+    } catch (e: any) {
+      console.error('[Supabase DB CTWA Log Error]:', e.message);
     }
 
     return record;

@@ -638,9 +638,13 @@ model CtwaMessageLog {
   id             String   @id @default(cuid())
   timestamp      String
   phoneNumber    String
+  customerName   String?  @default("WhatsApp Customer")
   direction      String
   messageContent String   @db.Text
+  adId           String   @default("")
   creativeName   String   @default("")
+  campaign       String   @default("")
+  product        String   @default("")
   flowName       String   @default("")
   nodeId         String   @default("")
   nodeLabel      String   @default("")
