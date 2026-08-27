@@ -533,8 +533,8 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
     }
 
     // Send Confirmation Email
-    // check if COD, send email immediately. If Stripe, wait for verification.
-    if (paymentMethod !== 'stripe') {
+    // check if COD, send email immediately. If Stripe or Paymob, wait for verification.
+    if (paymentMethod !== 'stripe' && paymentMethod !== 'paymob') {
       try {
         let userEmail = order.guestEmail;
         if (!userEmail && userId) {
