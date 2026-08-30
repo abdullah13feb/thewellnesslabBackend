@@ -95,14 +95,13 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
       }
 
       try {
-        const integrationIdVal = isNaN(Number(PAYMOB_INTEGRATION_ID))
-          ? PAYMOB_INTEGRATION_ID
-          : Number(PAYMOB_INTEGRATION_ID);
+        const rawIds = PAYMOB_INTEGRATION_ID.split(",").map((id) => id.trim()).filter(Boolean);
+        const integrationIds = rawIds.map((id) => (isNaN(Number(id)) ? id : Number(id)));
 
         const payload: any = {
           amount: amountCents,
           currency: "AED",
-          payment_methods: [integrationIdVal],
+          payment_methods: integrationIds,
           billing_data: billingData,
           customer: {
             first_name: firstName,
@@ -194,8 +193,9 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
         currency: "AED",
       };
 
-      if (PAYMOB_INTEGRATION_ID && !isNaN(Number(PAYMOB_INTEGRATION_ID))) {
-        keyPayload.integration_id = Number(PAYMOB_INTEGRATION_ID);
+      const primaryId = (PAYMOB_INTEGRATION_ID || "").split(",")[0].trim();
+      if (primaryId && !isNaN(Number(primaryId))) {
+        keyPayload.integration_id = Number(primaryId);
       }
 
       const keyRes = await axios.post("https://accept.paymob.com/api/acceptance/payment_keys", keyPayload);
