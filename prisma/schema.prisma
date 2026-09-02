@@ -671,4 +671,28 @@ model CtwaGowaConfig {
   updatedAt          DateTime @updatedAt
 }
 
+model UrbanSaunaMessageLog {
+  id             String   @id @default(cuid())
+  timestamp      String
+  phoneNumber    String
+  customerName   String?  @default("WhatsApp Customer")
+  direction      String   // "Incoming" | "Outgoing"
+  messageContent String   @db.Text
+  mediaUrl       String?
+  mediaType      String?  // "image" | "video" | "document"
+  adId           String   @default("")
+  creativeName   String   @default("")
+  campaign       String   @default("")
+  product        String   @default("")
+  flowName       String   @default("")
+  nodeId         String   @default("")
+  nodeLabel      String   @default("")
+  status         String   @default("Sent")
+  deviceId       String   @default("UrbanSauna")
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([phoneNumber])
+}
+
 

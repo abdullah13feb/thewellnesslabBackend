@@ -9,7 +9,7 @@ provider:
   runtime: nodejs20.x
   region: ap-south-1
   stage: dev
-  timeout: 30
+  timeout: 900
   memorySize: 512
   apiGateway:
     binaryMediaTypes:
@@ -58,7 +58,7 @@ provider:
     GOWA_BASIC_USER: ${env:GOWA_BASIC_USER, 'user1'}
     GOWA_BASIC_PASS: ${env:GOWA_BASIC_PASS, 'pass1'}
     GOWA_DEVICE_ID: ${env:GOWA_DEVICE_ID, 'adil'}
-    AUTO_REPLY_DELAY_MS: ${env:AUTO_REPLY_DELAY_MS, '2000'}
+    URBAN_SAUNA_DEVICE_ID: ${env:URBAN_SAUNA_DEVICE_ID, 'UrbanSauna'}
     PAYMOB_API_KEY: ${env:PAYMOB_API_KEY, ''}
     PAYMOB_PUBLIC_API_KEY: ${env:PAYMOB_PUBLIC_API_KEY, ''}
     PAYMOB_PRIVATE_API_KEY: ${env:PAYMOB_PRIVATE_API_KEY, ''}

@@ -16,6 +16,20 @@ router.post('/webhook', async (req: Request, res: Response) => {
     const innerPayload = body.payload || body.data || body;
     const referral = innerPayload.referral || body.referral || {};
 
+    const rawDevice = req.headers['x-device-id'] || req.headers['device-id'] || body.deviceId || body.device_id || innerPayload.device_id || '';
+    const targetUrbanDevice = process.env.URBAN_SAUNA_DEVICE_ID || process.env.GOWA_URBAN_DEVICE_ID || process.env.URBAN_DEVICE_ID || 'UrbanSauna';
+
+    // If device header or body indicates Urban Sauna, route directly to Urban Sauna DB processor
+    if (String(rawDevice).toLowerCase() === String(targetUrbanDevice).toLowerCase()) {
+      console.log(`🔀 [CTWA Webhook] Detected Urban Sauna device ("${rawDevice}"). Routing to Urban DB logger...`);
+      const urbanResult = await ctwaBackendService.processUrbanWebhook(body);
+      return res.status(200).json({
+        success: true,
+        message: 'Urban Sauna message logged successfully via webhook',
+        data: urbanResult,
+      });
+    }
+
     const rawPhone = innerPayload.from || innerPayload.chat_id || body.phone || body.from || body.phoneNumber;
     const message = innerPayload.body || body.message || body.messageText || body.body;
     const customerName = innerPayload.from_name || innerPayload.pushName || body.customerName || body.name;
@@ -235,4 +249,81 @@ router.post('/simulate-webhook', async (req: Request, res: Response) => {
   return res.json({ success: true, data: result });
 });
 
+// =========================================================================
+// URBAN SAUNA MODULE DEDICATED ROUTES
+// =========================================================================
+
+/**
+ * @route   POST /api/ctwa/urban/webhook
+ * @desc    Incoming Webhook specifically for Urban Sauna device
+ */
+router.post('/urban/webhook', async (req: Request, res: Response) => {
+  try {
+    console.log('📥 [Urban Sauna Webhook Received]:', JSON.stringify(req.body, null, 2));
+    const result = await ctwaBackendService.processUrbanWebhook(req.body);
+    return res.status(200).json({
+      success: true,
+      message: 'Urban Sauna message logged successfully',
+      data: result,
+    });
+  } catch (error: any) {
+    console.error('❌ [Urban Sauna Webhook Error]:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/ctwa/urban/messages
+ * @desc    Get Urban Sauna message history with date & phone filters
+ */
+router.get('/urban/messages', async (req: Request, res: Response) => {
+  const { filterType, startDate, endDate, startTime, endTime, direction, status, phone, search } = req.query;
+  const logs = await ctwaBackendService.getUrbanMessages({
+    filterType: filterType as string,
+    startDate: startDate as string,
+    endDate: endDate as string,
+    startTime: startTime as string,
+    endTime: endTime as string,
+    direction: direction as string,
+    status: status as string,
+    phone: phone as string,
+    search: search as string,
+  });
+  return res.json({ success: true, data: logs });
+});
+
+/**
+ * @route   GET /api/ctwa/urban/contacts
+ * @desc    Get unique phone numbers (contacts) for Urban Sauna
+ */
+router.get('/urban/contacts', async (req: Request, res: Response) => {
+  const contacts = await ctwaBackendService.getUrbanContacts();
+  return res.json({ success: true, data: contacts });
+});
+
+/**
+ * @route   POST /api/ctwa/urban/send-bulk
+ * @desc    Send bulk text / media messages to selected phone numbers using Urban Sauna device
+ */
+router.post('/urban/send-bulk', async (req: Request, res: Response) => {
+  const { phoneNumbers, message, mediaUrl, mediaType, delaySeconds } = req.body;
+  if (!phoneNumbers || !Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+    return res.status(400).json({ success: false, error: 'Recipient phone numbers array is required' });
+  }
+  if (!message && !mediaUrl) {
+    return res.status(400).json({ success: false, error: 'Message content or media URL is required' });
+  }
+
+  const result = await ctwaBackendService.sendUrbanBulkMessages({
+    phoneNumbers,
+    message: message || '',
+    mediaUrl,
+    mediaType,
+    delaySeconds: delaySeconds ? Number(delaySeconds) : undefined,
+  });
+
+  return res.json({ success: true, data: result });
+});
+
 export default router;
+

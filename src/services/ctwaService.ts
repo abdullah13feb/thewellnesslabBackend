@@ -944,5 +944,292 @@ export const ctwaBackendService = {
     }
     return messageLogsStore;
   },
+
+  // ─── DEDICATED URBAN SAUNA MODULE METHODS ─────────────────────────
+
+  processUrbanWebhook: async (payload: any) => {
+    const rawPayload = payload?.rawPayload || payload || {};
+    const innerPayload = rawPayload?.payload || rawPayload?.data || rawPayload || {};
+
+    const rawPhone = payload.phone || innerPayload.from || innerPayload.chat_id || rawPayload.from || rawPayload.phone || rawPayload.phoneNumber || '+971500000000';
+    const phoneNumber = String(rawPhone).includes('@') ? String(rawPhone).split('@')[0] : String(rawPhone);
+
+    let msgContent = payload.message || innerPayload.body || rawPayload.message || rawPayload.body || '';
+    if (typeof msgContent === 'object' && msgContent !== null) {
+      msgContent = msgContent.conversation || msgContent.text || msgContent.caption || JSON.stringify(msgContent);
+    }
+    const messageText = String(msgContent).trim();
+    const customerName = payload.customerName || innerPayload.from_name || innerPayload.pushName || rawPayload.name || 'WhatsApp Customer';
+    const isFromMe = Boolean(innerPayload.is_from_me || payload.is_from_me);
+    const direction = isFromMe ? 'Outgoing' : 'Incoming';
+    const mediaUrl = payload.mediaUrl || innerPayload.media_url || innerPayload.url || null;
+    const mediaType = payload.mediaType || innerPayload.media_type || null;
+
+    const timeStr = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Dubai',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+
+    const urbanDeviceId = payload.deviceId || rawPayload.deviceId || rawPayload.device_id || process.env.URBAN_SAUNA_DEVICE_ID || process.env.GOWA_URBAN_DEVICE_ID || process.env.URBAN_DEVICE_ID || 'UrbanSauna';
+
+    try {
+      const log = await prisma.urbanSaunaMessageLog.create({
+        data: {
+          timestamp: timeStr,
+          phoneNumber,
+          customerName,
+          direction,
+          messageContent: messageText,
+          mediaUrl,
+          mediaType,
+          status: isFromMe ? 'Sent' : 'Received',
+          deviceId: urbanDeviceId,
+        },
+      });
+      console.log(`✅ [UrbanSauna DB Log] ${direction} message logged for ${phoneNumber}`);
+      return log;
+    } catch (err: any) {
+      console.error('❌ [UrbanSauna DB Log Error]:', err.message);
+      return { id: `urban-${Date.now()}`, phoneNumber, messageContent: messageText, direction };
+    }
+  },
+
+  getUrbanMessages: async (filters?: {
+    filterType?: string;
+    startDate?: string;
+    endDate?: string;
+    startTime?: string;
+    endTime?: string;
+    direction?: string;
+    status?: string;
+    phone?: string;
+    search?: string;
+  }) => {
+    try {
+      const where: any = {};
+
+      if (filters?.phone) {
+        where.phoneNumber = { contains: filters.phone };
+      }
+
+      if (filters?.direction && filters.direction !== 'All') {
+        where.direction = filters.direction;
+      }
+
+      if (filters?.status && filters.status !== 'All') {
+        where.status = filters.status;
+      }
+
+      if (filters?.search) {
+        const query = filters.search.toLowerCase();
+        where.OR = [
+          { phoneNumber: { contains: query } },
+          { customerName: { contains: query, mode: 'insensitive' } },
+          { messageContent: { contains: query, mode: 'insensitive' } },
+        ];
+      }
+
+      if (filters?.filterType === 'day') {
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        where.createdAt = { gte: startOfDay };
+      } else if (filters?.filterType === 'yesterday') {
+        const now = new Date();
+        const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999);
+        where.createdAt = { gte: startOfYesterday, lte: endOfYesterday };
+      } else if (filters?.filterType === 'week') {
+        const now = new Date();
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
+        where.createdAt = { gte: startOfWeek };
+      } else if (filters?.filterType === 'month') {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        where.createdAt = { gte: startOfMonth };
+      } else if (filters?.filterType === 'custom' && filters?.startDate) {
+        const start = new Date(filters.startDate);
+        if (filters.startTime) {
+          const [h, m] = filters.startTime.split(':');
+          start.setHours(parseInt(h || '0', 10), parseInt(m || '0', 10), 0, 0);
+        } else {
+          start.setHours(0, 0, 0, 0);
+        }
+
+        const end = filters.endDate ? new Date(filters.endDate) : new Date(start);
+        if (filters.endTime) {
+          const [h, m] = filters.endTime.split(':');
+          end.setHours(parseInt(h || '23', 10), parseInt(m || '59', 10), 59, 999);
+        } else {
+          end.setHours(23, 59, 59, 999);
+        }
+
+        where.createdAt = { gte: start, lte: end };
+      }
+
+      return await prisma.urbanSaunaMessageLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (err: any) {
+      console.error('[UrbanSauna getUrbanMessages Error]:', err.message);
+      return [];
+    }
+  },
+
+  getUrbanContacts: async () => {
+    try {
+      const allLogs = await prisma.urbanSaunaMessageLog.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const contactsMap = new Map<string, {
+        phoneNumber: string;
+        customerName: string;
+        lastMessage: string;
+        lastTimestamp: string;
+        lastCreatedAt: Date;
+        messageCount: number;
+        unreadCount: number;
+      }>();
+
+      for (const log of allLogs) {
+        const phone = log.phoneNumber;
+        if (!contactsMap.has(phone)) {
+          contactsMap.set(phone, {
+            phoneNumber: phone,
+            customerName: log.customerName || 'WhatsApp Contact',
+            lastMessage: log.messageContent,
+            lastTimestamp: log.timestamp || new Date(log.createdAt).toLocaleTimeString(),
+            lastCreatedAt: log.createdAt,
+            messageCount: 1,
+            unreadCount: log.direction === 'Incoming' ? 1 : 0,
+          });
+        } else {
+          const contact = contactsMap.get(phone)!;
+          contact.messageCount += 1;
+        }
+      }
+
+      return Array.from(contactsMap.values());
+    } catch (err: any) {
+      console.error('[UrbanSauna getUrbanContacts Error]:', err.message);
+      return [];
+    }
+  },
+
+  sendUrbanBulkMessages: async (data: { phoneNumbers: string[]; message: string; mediaUrl?: string; mediaType?: string; delaySeconds?: number }) => {
+    const { phoneNumbers, message, mediaUrl, mediaType, delaySeconds = 65 } = data;
+    const results: any[] = [];
+    const cfg = await ctwaBackendService.getGOWAConfig();
+    const urbanDeviceId = process.env.URBAN_SAUNA_DEVICE_ID || process.env.GOWA_URBAN_DEVICE_ID || process.env.URBAN_DEVICE_ID || 'UrbanSauna';
+
+    for (let i = 0; i < phoneNumbers.length; i++) {
+      const phone = phoneNumbers[i];
+      const formattedPhone = phone.replace(/[^0-9]/g, '');
+      const fullJid = formattedPhone.includes('@') ? formattedPhone : `${formattedPhone}@s.whatsapp.net`;
+
+      try {
+        console.log(`[UrbanSauna Bulk Send ${i + 1}/${phoneNumbers.length}] Sending to ${formattedPhone} via X-Device-Id: ${urbanDeviceId}`);
+        
+        let reqBody: any = {
+          phone: fullJid,
+          message: message,
+        };
+
+        if (mediaUrl) {
+          reqBody.url = mediaUrl;
+          reqBody.media_type = mediaType || 'image';
+        }
+
+        const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
+        const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
+
+        const reqConfig: any = {
+          timeout: 8000,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Device-Id': urbanDeviceId,
+          },
+        };
+        if (authUser && authPass) {
+          reqConfig.auth = { username: authUser, password: authPass };
+        }
+
+        const resp = await axios.post(`${cfg.gowaApiUrl}/send/message`, reqBody, reqConfig);
+
+        // Save sent message to UrbanSaunaMessageLog DB table
+        const timeStr = new Date().toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Dubai',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        });
+        const savedLog = await prisma.urbanSaunaMessageLog.create({
+          data: {
+            timestamp: timeStr,
+            phoneNumber: formattedPhone,
+            customerName: 'WhatsApp Customer',
+            direction: 'Outgoing',
+            messageContent: message,
+            mediaUrl: mediaUrl || null,
+            mediaType: mediaType || null,
+            status: 'Sent',
+            deviceId: urbanDeviceId,
+          },
+        });
+
+        results.push({ phone: formattedPhone, success: true, logId: savedLog.id, response: resp.data });
+      } catch (err: any) {
+        console.error(`❌ [UrbanSauna Bulk Send Error for ${formattedPhone}]:`, err.message);
+
+        // Still log attempt in DB as failed / logged
+        const timeStr = new Date().toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Dubai',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        });
+        try {
+          const savedLog = await prisma.urbanSaunaMessageLog.create({
+            data: {
+              timestamp: timeStr,
+              phoneNumber: formattedPhone,
+              customerName: 'WhatsApp Customer',
+              direction: 'Outgoing',
+              messageContent: message,
+              mediaUrl: mediaUrl || null,
+              mediaType: mediaType || null,
+              status: 'Failed',
+              deviceId: urbanDeviceId,
+            },
+          });
+          results.push({ phone: formattedPhone, success: false, logId: savedLog.id, error: err.message });
+        } catch (e: any) {
+          results.push({ phone: formattedPhone, success: false, error: err.message });
+        }
+      }
+
+      // Delay interval between each recipient message (e.g. 65 seconds = 1 min 5 sec)
+      if (i < phoneNumbers.length - 1 && delaySeconds > 0) {
+        console.log(`⏳ [UrbanSauna Bulk Send] Delaying ${delaySeconds} second(s) before sending to next recipient...`);
+        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+      }
+    }
+
+    return {
+      total: phoneNumbers.length,
+      successCount: results.filter((r) => r.success).length,
+      failCount: results.filter((r) => !r.success).length,
+      details: results,
+    };
+  },
+
 };
 
