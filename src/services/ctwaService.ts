@@ -1081,15 +1081,23 @@ export const ctwaBackendService = {
     }
   },
 
-  getUrbanContacts: async () => {
+  getUrbanContacts: async (filters?: { leadStatus?: string; tag?: string }) => {
     try {
-      const allLogs = await prisma.urbanSaunaMessageLog.findMany({
-        orderBy: { createdAt: 'desc' },
-      });
+      const [allLogs, savedContacts] = await Promise.all([
+        prisma.urbanSaunaMessageLog.findMany({ orderBy: { createdAt: 'desc' } }),
+        prisma.urbanSaunaContact.findMany(),
+      ]);
+
+      const dbContactsMap = new Map(savedContacts.map((c) => [c.phoneNumber, c]));
 
       const contactsMap = new Map<string, {
         phoneNumber: string;
         customerName: string;
+        leadStatus: string;
+        tags: string[];
+        notes: string;
+        email: string;
+        city: string;
         lastMessage: string;
         lastTimestamp: string;
         lastCreatedAt: Date;
@@ -1099,10 +1107,17 @@ export const ctwaBackendService = {
 
       for (const log of allLogs) {
         const phone = log.phoneNumber;
+        const saved = dbContactsMap.get(phone);
+
         if (!contactsMap.has(phone)) {
           contactsMap.set(phone, {
             phoneNumber: phone,
-            customerName: log.customerName || 'WhatsApp Contact',
+            customerName: saved?.customerName || log.customerName || 'WhatsApp Customer',
+            leadStatus: saved?.leadStatus || 'NEW_LEAD',
+            tags: saved?.tags || [],
+            notes: saved?.notes || '',
+            email: saved?.email || '',
+            city: saved?.city || '',
             lastMessage: log.messageContent,
             lastTimestamp: log.timestamp || new Date(log.createdAt).toLocaleTimeString(),
             lastCreatedAt: log.createdAt,
@@ -1115,10 +1130,77 @@ export const ctwaBackendService = {
         }
       }
 
-      return Array.from(contactsMap.values());
+      // Add contacts in DB that might not have logs yet
+      for (const saved of savedContacts) {
+        if (!contactsMap.has(saved.phoneNumber)) {
+          contactsMap.set(saved.phoneNumber, {
+            phoneNumber: saved.phoneNumber,
+            customerName: saved.customerName || 'WhatsApp Customer',
+            leadStatus: saved.leadStatus || 'NEW_LEAD',
+            tags: saved.tags || [],
+            notes: saved.notes || '',
+            email: saved.email || '',
+            city: saved.city || '',
+            lastMessage: 'No messages yet',
+            lastTimestamp: new Date(saved.createdAt).toLocaleTimeString(),
+            lastCreatedAt: saved.createdAt,
+            messageCount: 0,
+            unreadCount: 0,
+          });
+        }
+      }
+
+      let resultList = Array.from(contactsMap.values());
+
+      if (filters?.leadStatus && filters.leadStatus !== 'ALL') {
+        resultList = resultList.filter((c) => c.leadStatus === filters.leadStatus);
+      }
+
+      if (filters?.tag) {
+        resultList = resultList.filter((c) => c.tags.includes(filters.tag!));
+      }
+
+      return resultList;
     } catch (err: any) {
       console.error('[UrbanSauna getUrbanContacts Error]:', err.message);
       return [];
+    }
+  },
+
+  updateUrbanContact: async (phoneNumber: string, data: {
+    customerName?: string;
+    leadStatus?: string;
+    tags?: string[];
+    notes?: string;
+    email?: string;
+    city?: string;
+  }) => {
+    try {
+      const formattedPhone = phoneNumber.replace(/[^0-9]/g, '');
+      const updated = await prisma.urbanSaunaContact.upsert({
+        where: { phoneNumber: formattedPhone },
+        update: {
+          customerName: data.customerName !== undefined ? data.customerName : undefined,
+          leadStatus: data.leadStatus !== undefined ? data.leadStatus : undefined,
+          tags: data.tags !== undefined ? data.tags : undefined,
+          notes: data.notes !== undefined ? data.notes : undefined,
+          email: data.email !== undefined ? data.email : undefined,
+          city: data.city !== undefined ? data.city : undefined,
+        },
+        create: {
+          phoneNumber: formattedPhone,
+          customerName: data.customerName || 'WhatsApp Customer',
+          leadStatus: data.leadStatus || 'NEW_LEAD',
+          tags: data.tags || [],
+          notes: data.notes || '',
+          email: data.email || '',
+          city: data.city || '',
+        },
+      });
+      return { success: true, contact: updated };
+    } catch (err: any) {
+      console.error('[UrbanSauna updateUrbanContact Error]:', err.message);
+      return { success: false, error: err.message };
     }
   },
 

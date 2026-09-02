@@ -695,4 +695,20 @@ model UrbanSaunaMessageLog {
   @@index([phoneNumber])
 }
 
+model UrbanSaunaContact {
+  id             String   @id @default(cuid())
+  phoneNumber    String   @unique
+  customerName   String?  @default("WhatsApp Customer")
+  leadStatus     String   @default("NEW_LEAD") // "NEW_LEAD" | "INTERESTED" | "FOLLOW_UP" | "CLOSED_DEAL" | "NOT_INTERESTED"
+  tags           String[] @default([])
+  notes          String?  @db.Text
+  email          String?
+  city           String?
+  assignedAgent  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([leadStatus])
+}
+
 
