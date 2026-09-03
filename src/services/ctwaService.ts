@@ -1225,8 +1225,30 @@ export const ctwaBackendService = {
         };
 
         if (mediaUrl) {
-          const isImage = !mediaType || mediaType === 'image' || mediaUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) || mediaUrl.includes('/image/upload');
-          if (isImage) {
+          const type = (mediaType || '').toLowerCase();
+          const isVideo = type === 'video' || mediaUrl.match(/\.(mp4|mov|avi|mkv|webm)$/i);
+          const isDoc = type === 'document' || mediaUrl.match(/\.(pdf|doc|docx|xls|xlsx|txt|zip)$/i);
+          const isImage = type === 'image' || (!isVideo && !isDoc) || mediaUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) || mediaUrl.includes('/image/upload');
+
+          if (isVideo) {
+            endpoint = `${cfg.gowaApiUrl}/send/video`;
+            reqBody = {
+              phone: fullJid,
+              caption: message || '',
+              video_url: mediaUrl,
+              view_once: false,
+              compress: true,
+              is_forwarded: false,
+            };
+          } else if (isDoc) {
+            endpoint = `${cfg.gowaApiUrl}/send/file`;
+            reqBody = {
+              phone: fullJid,
+              caption: message || '',
+              file_url: mediaUrl,
+              is_forwarded: false,
+            };
+          } else {
             endpoint = `${cfg.gowaApiUrl}/send/image`;
             reqBody = {
               phone: fullJid,
@@ -1236,9 +1258,6 @@ export const ctwaBackendService = {
               compress: true,
               is_forwarded: false,
             };
-          } else {
-            reqBody.url = mediaUrl;
-            reqBody.media_type = mediaType || 'document';
           }
         }
 
@@ -1246,7 +1265,7 @@ export const ctwaBackendService = {
         const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
 
         const reqConfig: any = {
-          timeout: 10000,
+          timeout: 12000,
           headers: {
             'Content-Type': 'application/json',
             'X-Device-Id': urbanDeviceId,
@@ -1260,9 +1279,9 @@ export const ctwaBackendService = {
         try {
           resp = await axios.post(endpoint, reqBody, reqConfig);
         } catch (postErr: any) {
-          // Fallback to /send/message if /send/image fails
+          // Fallback to /send/message if specialized endpoint fails
           if (endpoint !== `${cfg.gowaApiUrl}/send/message`) {
-            console.warn(`⚠️ [UrbanSauna Send Image Fallback] Retrying with /send/message for ${formattedPhone}...`);
+            console.warn(`⚠️ [UrbanSauna Media Send Fallback] Retrying with /send/message for ${formattedPhone}...`);
             const fallbackBody = {
               phone: fullJid,
               message: message,
