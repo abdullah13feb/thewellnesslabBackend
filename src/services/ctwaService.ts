@@ -1370,5 +1370,67 @@ export const ctwaBackendService = {
     };
   },
 
+  getUrbanLeadStatuses: async () => {
+    try {
+      const dbStatuses = await prisma.leadStatus.findMany({
+        orderBy: { order: 'asc' },
+      });
+
+      const defaultStatuses: Record<string, { label: string; bgClass: string; textClass: string; borderClass: string }> = {
+        NEW_LEAD: { label: 'New Lead', bgClass: 'bg-blue-500/15', textClass: 'text-blue-500', borderClass: 'border-blue-500/30' },
+        INTERESTED: { label: 'Interested', bgClass: 'bg-amber-500/15', textClass: 'text-amber-600', borderClass: 'border-amber-500/30' },
+        FOLLOW_UP: { label: 'Follow Up', bgClass: 'bg-purple-500/15', textClass: 'text-purple-500', borderClass: 'border-purple-500/30' },
+        CLOSED_DEAL: { label: 'Closed Deal (Won)', bgClass: 'bg-emerald-500/15', textClass: 'text-emerald-600', borderClass: 'border-emerald-500/30 font-bold' },
+        NOT_INTERESTED: { label: 'Not Interested (Lost)', bgClass: 'bg-rose-500/15', textClass: 'text-rose-500', borderClass: 'border-rose-500/30' },
+      };
+
+      const result = { ...defaultStatuses };
+
+      for (const s of dbStatuses) {
+        let colorObj = { bgClass: 'bg-cyan-500/15', textClass: 'text-cyan-500', borderClass: 'border-cyan-500/30' };
+        if (s.color) {
+          try {
+            colorObj = JSON.parse(s.color);
+          } catch {
+            // ignore JSON parse error
+          }
+        }
+        result[s.value] = {
+          label: s.label,
+          ...colorObj,
+        };
+      }
+
+      return { success: true, statuses: result };
+    } catch (err: any) {
+      console.error('[UrbanSauna getUrbanLeadStatuses Error]:', err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
+  createUrbanLeadStatus: async (data: { label: string; value: string; color?: any }) => {
+    try {
+      const { label, value, color } = data;
+      const colorStr = typeof color === 'object' ? JSON.stringify(color) : color;
+
+      const created = await prisma.leadStatus.upsert({
+        where: { value },
+        update: {
+          label,
+          color: colorStr,
+        },
+        create: {
+          label,
+          value,
+          color: colorStr,
+        },
+      });
+
+      return { success: true, leadStatus: created };
+    } catch (err: any) {
+      console.error('[UrbanSauna createUrbanLeadStatus Error]:', err.message);
+      return { success: false, error: err.message };
+    }
+  },
 };
 

@@ -347,5 +347,24 @@ router.post('/urban/send-bulk', async (req: Request, res: Response) => {
   return res.json({ success: true, data: result });
 });
 
+/**
+ * @route   GET /api/ctwa/urban/lead-statuses
+ * @desc    Get all custom & default lead statuses from database
+ */
+router.get('/urban/lead-statuses', async (req: Request, res: Response) => {
+  const result = await ctwaBackendService.getUrbanLeadStatuses();
+  return res.json(result);
+});
+
+/**
+ * @route   POST /api/ctwa/urban/lead-statuses
+ * @desc    Create/Upsert custom lead status in database
+ */
+router.post('/urban/lead-statuses', async (req: Request, res: Response) => {
+  const { label, value, color } = req.body;
+  const result = await ctwaBackendService.createUrbanLeadStatus({ label, value, color });
+  return res.json(result);
+});
+
 export default router;
 
