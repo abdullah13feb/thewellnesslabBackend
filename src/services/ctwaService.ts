@@ -1218,21 +1218,35 @@ export const ctwaBackendService = {
       try {
         console.log(`[UrbanSauna Bulk Send ${i + 1}/${phoneNumbers.length}] Sending to ${formattedPhone} via X-Device-Id: ${urbanDeviceId}`);
         
+        let endpoint = `${cfg.gowaApiUrl}/send/message`;
         let reqBody: any = {
           phone: fullJid,
           message: message,
         };
 
         if (mediaUrl) {
-          reqBody.url = mediaUrl;
-          reqBody.media_type = mediaType || 'image';
+          const isImage = !mediaType || mediaType === 'image' || mediaUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) || mediaUrl.includes('/image/upload');
+          if (isImage) {
+            endpoint = `${cfg.gowaApiUrl}/send/image`;
+            reqBody = {
+              phone: fullJid,
+              caption: message || '',
+              image_url: mediaUrl,
+              view_once: false,
+              compress: true,
+              is_forwarded: false,
+            };
+          } else {
+            reqBody.url = mediaUrl;
+            reqBody.media_type = mediaType || 'document';
+          }
         }
 
         const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
         const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
 
         const reqConfig: any = {
-          timeout: 8000,
+          timeout: 10000,
           headers: {
             'Content-Type': 'application/json',
             'X-Device-Id': urbanDeviceId,
@@ -1242,7 +1256,24 @@ export const ctwaBackendService = {
           reqConfig.auth = { username: authUser, password: authPass };
         }
 
-        const resp = await axios.post(`${cfg.gowaApiUrl}/send/message`, reqBody, reqConfig);
+        let resp;
+        try {
+          resp = await axios.post(endpoint, reqBody, reqConfig);
+        } catch (postErr: any) {
+          // Fallback to /send/message if /send/image fails
+          if (endpoint !== `${cfg.gowaApiUrl}/send/message`) {
+            console.warn(`⚠️ [UrbanSauna Send Image Fallback] Retrying with /send/message for ${formattedPhone}...`);
+            const fallbackBody = {
+              phone: fullJid,
+              message: message,
+              url: mediaUrl,
+              media_type: mediaType || 'image',
+            };
+            resp = await axios.post(`${cfg.gowaApiUrl}/send/message`, fallbackBody, reqConfig);
+          } else {
+            throw postErr;
+          }
+        }
 
         // Save sent message to UrbanSaunaMessageLog DB table
         const timeStr = new Date().toLocaleTimeString('en-US', {
