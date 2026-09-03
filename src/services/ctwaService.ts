@@ -1226,11 +1226,18 @@ export const ctwaBackendService = {
 
         if (mediaUrl) {
           const type = (mediaType || '').toLowerCase();
+          const isLink = type === 'link';
           const isVideo = type === 'video' || mediaUrl.match(/\.(mp4|mov|avi|mkv|webm)$/i);
           const isDoc = type === 'document' || mediaUrl.match(/\.(pdf|doc|docx|xls|xlsx|txt|zip)$/i);
-          const isImage = type === 'image' || (!isVideo && !isDoc) || mediaUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) || mediaUrl.includes('/image/upload');
 
-          if (isVideo) {
+          if (isLink) {
+            endpoint = `${cfg.gowaApiUrl}/send/link`;
+            reqBody = {
+              phone: fullJid,
+              link: mediaUrl,
+              caption: message || '',
+            };
+          } else if (isVideo) {
             endpoint = `${cfg.gowaApiUrl}/send/video`;
             reqBody = {
               phone: fullJid,
