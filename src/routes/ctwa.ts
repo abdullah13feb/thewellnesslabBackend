@@ -297,10 +297,15 @@ router.get('/urban/messages', async (req: Request, res: Response) => {
  * @desc    Get unique phone numbers (contacts) for Urban Sauna
  */
 router.get('/urban/contacts', async (req: Request, res: Response) => {
-  const { leadStatus, tag } = req.query;
+  const { leadStatus, tag, unrepliedOnly, unreplied, inactivityDays, inactiveDays } = req.query;
+  const isUnreplied = unrepliedOnly === 'true' || unreplied === 'true';
+  const parsedInactivityDays = inactivityDays ? Number(inactivityDays) : inactiveDays ? Number(inactiveDays) : undefined;
+
   const contacts = await ctwaBackendService.getUrbanContacts({
     leadStatus: leadStatus ? String(leadStatus) : undefined,
     tag: tag ? String(tag) : undefined,
+    unrepliedOnly: isUnreplied || undefined,
+    inactivityDays: parsedInactivityDays && !isNaN(parsedInactivityDays) ? parsedInactivityDays : undefined,
   });
   return res.json({ success: true, data: contacts });
 });

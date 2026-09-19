@@ -1081,7 +1081,12 @@ export const ctwaBackendService = {
     }
   },
 
-  getUrbanContacts: async (filters?: { leadStatus?: string; tag?: string }) => {
+  getUrbanContacts: async (filters?: {
+    leadStatus?: string;
+    tag?: string;
+    unrepliedOnly?: boolean;
+    inactivityDays?: number;
+  }) => {
     try {
       const [allLogs, savedContacts] = await Promise.all([
         prisma.urbanSaunaMessageLog.findMany({ orderBy: { createdAt: 'desc' } }),
@@ -1101,6 +1106,7 @@ export const ctwaBackendService = {
         lastMessage: string;
         lastTimestamp: string;
         lastCreatedAt: Date;
+        lastMessageDirection?: 'Incoming' | 'Outgoing';
         messageCount: number;
         unreadCount: number;
       }>();
@@ -1121,6 +1127,7 @@ export const ctwaBackendService = {
             lastMessage: log.messageContent,
             lastTimestamp: log.timestamp || new Date(log.createdAt).toLocaleTimeString(),
             lastCreatedAt: log.createdAt,
+            lastMessageDirection: log.direction as 'Incoming' | 'Outgoing',
             messageCount: 1,
             unreadCount: log.direction === 'Incoming' ? 1 : 0,
           });
@@ -1144,6 +1151,7 @@ export const ctwaBackendService = {
             lastMessage: 'No messages yet',
             lastTimestamp: new Date(saved.createdAt).toLocaleTimeString(),
             lastCreatedAt: saved.createdAt,
+            lastMessageDirection: undefined,
             messageCount: 0,
             unreadCount: 0,
           });
@@ -1158,6 +1166,15 @@ export const ctwaBackendService = {
 
       if (filters?.tag) {
         resultList = resultList.filter((c) => c.tags.includes(filters.tag!));
+      }
+
+      if (filters?.unrepliedOnly) {
+        resultList = resultList.filter((c) => c.lastMessageDirection === 'Incoming');
+      }
+
+      if (filters?.inactivityDays && filters.inactivityDays > 0) {
+        const cutoffTime = Date.now() - filters.inactivityDays * 24 * 60 * 60 * 1000;
+        resultList = resultList.filter((c) => new Date(c.lastCreatedAt).getTime() <= cutoffTime);
       }
 
       return resultList;
