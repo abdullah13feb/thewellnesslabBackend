@@ -305,6 +305,25 @@ export const ctwaBackendService = {
             status: 'Sent',
           },
         });
+
+        await prisma.wellnessLabMessageLog.create({
+          data: {
+            timestamp: timeStr,
+            phoneNumber,
+            customerName: customerName !== 'WhatsApp Customer' ? customerName : lastLog?.customerName || 'WhatsApp Customer',
+            direction: 'Outgoing',
+            messageContent: messageText,
+            adId: adId || lastLog?.adId || '',
+            creativeName: creativeName || lastLog?.creativeName || '',
+            campaign: lastLog?.campaign || '',
+            product: lastLog?.product || '',
+            flowName: 'Human Agent',
+            nodeId: 'human_reply',
+            nodeLabel: 'Human Agent Reply',
+            status: 'Sent',
+            deviceId: process.env.GOWA_DEVICE_ID || 'adil',
+          },
+        });
       } catch (e: any) {
         console.error('[Supabase DB Human Agent Log Error]:', e.message);
       }
@@ -559,6 +578,47 @@ export const ctwaBackendService = {
           },
         ],
       });
+
+      try {
+        await prisma.wellnessLabMessageLog.createMany({
+          data: [
+            {
+              timestamp: timeStr,
+              phoneNumber,
+              customerName: payload.customerName || customerName || 'WhatsApp Customer',
+              direction: 'Incoming',
+              messageContent: messageText,
+              adId: mapping?.adId || adId || '',
+              creativeName: mapping?.creativeName || creativeName || '',
+              campaign: mapping?.campaign || '',
+              product: mapping?.product || '',
+              flowName: flow?.flowName || '',
+              nodeId: targetNode?.id || '',
+              nodeLabel: currentNodeLabel,
+              status: 'Received',
+              deviceId: process.env.GOWA_DEVICE_ID || 'adil',
+            },
+            {
+              timestamp: timeStr,
+              phoneNumber,
+              customerName: payload.customerName || customerName || 'WhatsApp Customer',
+              direction: 'Outgoing',
+              messageContent: replyText,
+              adId: mapping?.adId || adId || '',
+              creativeName: mapping?.creativeName || creativeName || '',
+              campaign: mapping?.campaign || '',
+              product: mapping?.product || '',
+              flowName: flow?.flowName || '',
+              nodeId: targetNode?.id || '',
+              nodeLabel: currentNodeLabel,
+              status: 'Sent',
+              deviceId: process.env.GOWA_DEVICE_ID || 'adil',
+            },
+          ],
+        });
+      } catch (wErr: any) {
+        console.error('[WellnessLab DB CTWA Log Error]:', wErr.message);
+      }
     } catch (e: any) {
       console.error('[Supabase DB CTWA Log Error]:', e.message);
     }
@@ -1446,6 +1506,495 @@ export const ctwaBackendService = {
       return { success: true, leadStatus: created };
     } catch (err: any) {
       console.error('[UrbanSauna createUrbanLeadStatus Error]:', err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
+  // ─── DEDICATED WELLNESS LAB MODULE METHODS ─────────────────────────
+
+  processWellnessWebhook: async (payload: any) => {
+    const rawPayload = payload?.rawPayload || payload || {};
+    const innerPayload = rawPayload?.payload || rawPayload?.data || rawPayload || {};
+
+    const rawPhone = payload.phone || innerPayload.from || innerPayload.chat_id || rawPayload.from || rawPayload.phone || rawPayload.phoneNumber || '+971500000000';
+    const phoneNumber = String(rawPhone).includes('@') ? String(rawPhone).split('@')[0] : String(rawPhone);
+
+    let msgContent = payload.message || innerPayload.body || rawPayload.message || rawPayload.body || '';
+    if (typeof msgContent === 'object' && msgContent !== null) {
+      msgContent = msgContent.conversation || msgContent.text || msgContent.caption || JSON.stringify(msgContent);
+    }
+    const messageText = String(msgContent).trim();
+    const customerName = payload.customerName || innerPayload.from_name || innerPayload.pushName || rawPayload.name || 'WhatsApp Customer';
+    const isFromMe = Boolean(innerPayload.is_from_me || payload.is_from_me);
+    const direction = isFromMe ? 'Outgoing' : 'Incoming';
+    const mediaUrl = payload.mediaUrl || innerPayload.media_url || innerPayload.url || null;
+    const mediaType = payload.mediaType || innerPayload.media_type || null;
+
+    const timeStr = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Dubai',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+
+    const wellnessDeviceId = payload.deviceId || rawPayload.deviceId || rawPayload.device_id || process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'adil';
+
+    try {
+      const log = await prisma.wellnessLabMessageLog.create({
+        data: {
+          timestamp: timeStr,
+          phoneNumber,
+          customerName,
+          direction,
+          messageContent: messageText,
+          mediaUrl,
+          mediaType,
+          status: isFromMe ? 'Sent' : 'Received',
+          deviceId: wellnessDeviceId,
+        },
+      });
+      console.log(`✅ [WellnessLab DB Log] ${direction} message logged for ${phoneNumber}`);
+      return log;
+    } catch (err: any) {
+      console.error('❌ [WellnessLab DB Log Error]:', err.message);
+      return { id: `wellness-${Date.now()}`, phoneNumber, messageContent: messageText, direction };
+    }
+  },
+
+  getWellnessMessages: async (filters?: {
+    filterType?: string;
+    startDate?: string;
+    endDate?: string;
+    startTime?: string;
+    endTime?: string;
+    direction?: string;
+    status?: string;
+    phone?: string;
+    search?: string;
+  }) => {
+    try {
+      const where: any = {};
+
+      if (filters?.phone) {
+        where.phoneNumber = { contains: filters.phone };
+      }
+
+      if (filters?.direction && filters.direction !== 'All') {
+        where.direction = filters.direction;
+      }
+
+      if (filters?.status && filters.status !== 'All') {
+        where.status = filters.status;
+      }
+
+      if (filters?.search) {
+        const query = filters.search.toLowerCase();
+        where.OR = [
+          { phoneNumber: { contains: query } },
+          { customerName: { contains: query, mode: 'insensitive' } },
+          { messageContent: { contains: query, mode: 'insensitive' } },
+        ];
+      }
+
+      if (filters?.filterType === 'day') {
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        where.createdAt = { gte: startOfDay };
+      } else if (filters?.filterType === 'yesterday') {
+        const now = new Date();
+        const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, -1);
+        where.createdAt = { gte: startOfYesterday, lte: endOfYesterday };
+      } else if (filters?.filterType === 'week') {
+        const now = new Date();
+        const startOfWeek = new Date(now.setDate(now.getDate() - 7));
+        where.createdAt = { gte: startOfWeek };
+      } else if (filters?.filterType === 'month') {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        where.createdAt = { gte: startOfMonth };
+      } else if (filters?.filterType === 'custom' && filters?.startDate) {
+        const start = new Date(filters.startDate);
+        if (filters.startTime) {
+          const [h, m] = filters.startTime.split(':');
+          start.setHours(parseInt(h || '0', 10), parseInt(m || '0', 10), 0, 0);
+        } else {
+          start.setHours(0, 0, 0, 0);
+        }
+
+        const end = filters.endDate ? new Date(filters.endDate) : new Date(start);
+        if (filters.endTime) {
+          const [h, m] = filters.endTime.split(':');
+          end.setHours(parseInt(h || '23', 10), parseInt(m || '59', 10), 59, 999);
+        } else {
+          end.setHours(23, 59, 59, 999);
+        }
+
+        where.createdAt = { gte: start, lte: end };
+      }
+
+      return await prisma.wellnessLabMessageLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (err: any) {
+      console.error('[WellnessLab getWellnessMessages Error]:', err.message);
+      return [];
+    }
+  },
+
+  getWellnessContacts: async (filters?: {
+    leadStatus?: string;
+    tag?: string;
+    unrepliedOnly?: boolean;
+    inactivityDays?: number;
+  }) => {
+    try {
+      const [allLogs, savedContacts] = await Promise.all([
+        prisma.wellnessLabMessageLog.findMany({ orderBy: { createdAt: 'desc' } }),
+        prisma.wellnessLabContact.findMany(),
+      ]);
+
+      const dbContactsMap = new Map(savedContacts.map((c) => [c.phoneNumber, c]));
+
+      const contactsMap = new Map<string, {
+        phoneNumber: string;
+        customerName: string;
+        leadStatus: string;
+        tags: string[];
+        notes: string;
+        email: string;
+        city: string;
+        lastMessage: string;
+        lastTimestamp: string;
+        lastCreatedAt: Date;
+        lastMessageDirection?: 'Incoming' | 'Outgoing';
+        messageCount: number;
+        unreadCount: number;
+      }>();
+
+      for (const log of allLogs) {
+        const phone = log.phoneNumber;
+        const saved = dbContactsMap.get(phone);
+
+        if (!contactsMap.has(phone)) {
+          contactsMap.set(phone, {
+            phoneNumber: phone,
+            customerName: saved?.customerName || log.customerName || 'WhatsApp Customer',
+            leadStatus: saved?.leadStatus || 'NEW_LEAD',
+            tags: saved?.tags || [],
+            notes: saved?.notes || '',
+            email: saved?.email || '',
+            city: saved?.city || '',
+            lastMessage: log.messageContent,
+            lastTimestamp: log.timestamp || new Date(log.createdAt).toLocaleTimeString(),
+            lastCreatedAt: log.createdAt,
+            lastMessageDirection: log.direction as 'Incoming' | 'Outgoing',
+            messageCount: 1,
+            unreadCount: log.direction === 'Incoming' ? 1 : 0,
+          });
+        } else {
+          const contact = contactsMap.get(phone)!;
+          contact.messageCount += 1;
+        }
+      }
+
+      for (const saved of savedContacts) {
+        if (!contactsMap.has(saved.phoneNumber)) {
+          contactsMap.set(saved.phoneNumber, {
+            phoneNumber: saved.phoneNumber,
+            customerName: saved.customerName || 'WhatsApp Customer',
+            leadStatus: saved.leadStatus || 'NEW_LEAD',
+            tags: saved.tags || [],
+            notes: saved.notes || '',
+            email: saved.email || '',
+            city: saved.city || '',
+            lastMessage: 'No messages yet',
+            lastTimestamp: new Date(saved.createdAt).toLocaleTimeString(),
+            lastCreatedAt: saved.createdAt,
+            lastMessageDirection: undefined,
+            messageCount: 0,
+            unreadCount: 0,
+          });
+        }
+      }
+
+      let resultList = Array.from(contactsMap.values());
+
+      if (filters?.leadStatus && filters.leadStatus !== 'ALL') {
+        resultList = resultList.filter((c) => c.leadStatus === filters.leadStatus);
+      }
+
+      if (filters?.tag) {
+        resultList = resultList.filter((c) => c.tags.includes(filters.tag!));
+      }
+
+      if (filters?.unrepliedOnly) {
+        resultList = resultList.filter((c) => c.lastMessageDirection === 'Incoming');
+      }
+
+      if (filters?.inactivityDays && filters.inactivityDays > 0) {
+        const cutoffTime = Date.now() - filters.inactivityDays * 24 * 60 * 60 * 1000;
+        resultList = resultList.filter((c) => new Date(c.lastCreatedAt).getTime() <= cutoffTime);
+      }
+
+      return resultList;
+    } catch (err: any) {
+      console.error('[WellnessLab getWellnessContacts Error]:', err.message);
+      return [];
+    }
+  },
+
+  updateWellnessContact: async (phoneNumber: string, data: {
+    customerName?: string;
+    leadStatus?: string;
+    tags?: string[];
+    notes?: string;
+    email?: string;
+    city?: string;
+  }) => {
+    try {
+      const formattedPhone = phoneNumber.replace(/[^0-9]/g, '');
+      const updated = await prisma.wellnessLabContact.upsert({
+        where: { phoneNumber: formattedPhone },
+        update: {
+          customerName: data.customerName !== undefined ? data.customerName : undefined,
+          leadStatus: data.leadStatus !== undefined ? data.leadStatus : undefined,
+          tags: data.tags !== undefined ? data.tags : undefined,
+          notes: data.notes !== undefined ? data.notes : undefined,
+          email: data.email !== undefined ? data.email : undefined,
+          city: data.city !== undefined ? data.city : undefined,
+        },
+        create: {
+          phoneNumber: formattedPhone,
+          customerName: data.customerName || 'WhatsApp Customer',
+          leadStatus: data.leadStatus || 'NEW_LEAD',
+          tags: data.tags || [],
+          notes: data.notes || '',
+          email: data.email || '',
+          city: data.city || '',
+        },
+      });
+      return { success: true, contact: updated };
+    } catch (err: any) {
+      console.error('[WellnessLab updateWellnessContact Error]:', err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
+  sendWellnessBulkMessages: async (data: { phoneNumbers: string[]; message: string; mediaUrl?: string; mediaType?: string; delaySeconds?: number }) => {
+    const { phoneNumbers, message, mediaUrl, mediaType, delaySeconds = 65 } = data;
+    const results: any[] = [];
+    const cfg = await ctwaBackendService.getGOWAConfig();
+    const wellnessDeviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'adil';
+
+    for (let i = 0; i < phoneNumbers.length; i++) {
+      const phone = phoneNumbers[i];
+      const formattedPhone = phone.replace(/[^0-9]/g, '');
+      const fullJid = formattedPhone.includes('@') ? formattedPhone : `${formattedPhone}@s.whatsapp.net`;
+
+      try {
+        console.log(`[WellnessLab Bulk Send ${i + 1}/${phoneNumbers.length}] Sending to ${formattedPhone} via X-Device-Id: ${wellnessDeviceId}`);
+        
+        let endpoint = `${cfg.gowaApiUrl}/send/message`;
+        let reqBody: any = {
+          phone: fullJid,
+          message: message,
+        };
+
+        if (mediaUrl) {
+          const type = (mediaType || '').toLowerCase();
+          const isLink = type === 'link';
+          const isVideo = type === 'video' || mediaUrl.match(/\.(mp4|mov|avi|mkv|webm)$/i);
+          const isDoc = type === 'document' || mediaUrl.match(/\.(pdf|doc|docx|xls|xlsx|txt|zip)$/i);
+
+          if (isLink) {
+            endpoint = `${cfg.gowaApiUrl}/send/link`;
+            reqBody = {
+              phone: fullJid,
+              link: mediaUrl,
+              caption: message || '',
+            };
+          } else if (isVideo) {
+            endpoint = `${cfg.gowaApiUrl}/send/video`;
+            reqBody = {
+              phone: fullJid,
+              caption: message || '',
+              video_url: mediaUrl,
+              view_once: false,
+              compress: true,
+              is_forwarded: false,
+            };
+          } else if (isDoc) {
+            endpoint = `${cfg.gowaApiUrl}/send/file`;
+            reqBody = {
+              phone: fullJid,
+              caption: message || '',
+              file_url: mediaUrl,
+              is_forwarded: false,
+            };
+          } else {
+            endpoint = `${cfg.gowaApiUrl}/send/image`;
+            reqBody = {
+              phone: fullJid,
+              caption: message || '',
+              image_url: mediaUrl,
+              view_once: false,
+              compress: true,
+              is_forwarded: false,
+            };
+          }
+        }
+
+        const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
+        const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
+
+        const reqConfig: any = {
+          timeout: 12000,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Device-Id': wellnessDeviceId,
+          },
+        };
+        if (authUser && authPass) {
+          reqConfig.auth = { username: authUser, password: authPass };
+        }
+
+        let resp;
+        try {
+          resp = await axios.post(endpoint, reqBody, reqConfig);
+        } catch (postErr: any) {
+          if (endpoint !== `${cfg.gowaApiUrl}/send/message`) {
+            console.warn(`⚠️ [WellnessLab Media Send Fallback] Retrying with /send/message for ${formattedPhone}...`);
+            const fallbackBody = {
+              phone: fullJid,
+              message: message,
+              url: mediaUrl,
+              media_type: mediaType || 'image',
+            };
+            resp = await axios.post(`${cfg.gowaApiUrl}/send/message`, fallbackBody, reqConfig);
+          } else {
+            throw postErr;
+          }
+        }
+
+        const timeStr = new Date().toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Dubai',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        });
+        const savedLog = await prisma.wellnessLabMessageLog.create({
+          data: {
+            timestamp: timeStr,
+            phoneNumber: formattedPhone,
+            customerName: 'WhatsApp Customer',
+            direction: 'Outgoing',
+            messageContent: message,
+            mediaUrl: mediaUrl || null,
+            mediaType: mediaType || null,
+            status: 'Sent',
+            deviceId: wellnessDeviceId,
+          },
+        });
+
+        results.push({ phone: formattedPhone, success: true, data: resp.data, logId: savedLog.id });
+      } catch (err: any) {
+        console.error(`❌ [WellnessLab Bulk Send Error for ${formattedPhone}]:`, err.message);
+        const timeStr = new Date().toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Dubai',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        });
+        try {
+          const savedLog = await prisma.wellnessLabMessageLog.create({
+            data: {
+              timestamp: timeStr,
+              phoneNumber: formattedPhone,
+              customerName: 'WhatsApp Customer',
+              direction: 'Outgoing',
+              messageContent: message,
+              mediaUrl: mediaUrl || null,
+              mediaType: mediaType || null,
+              status: 'Failed',
+              deviceId: wellnessDeviceId,
+            },
+          });
+          results.push({ phone: formattedPhone, success: false, error: err.message, logId: savedLog.id });
+        } catch {
+          results.push({ phone: formattedPhone, success: false, error: err.message });
+        }
+      }
+
+      if (i < phoneNumbers.length - 1 && delaySeconds > 0) {
+        console.log(`⏳ [WellnessLab Bulk Send] Delaying ${delaySeconds} second(s) before sending to next recipient...`);
+        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+      }
+    }
+
+    return {
+      total: phoneNumbers.length,
+      successful: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
+      results,
+    };
+  },
+
+  getWellnessLeadStatuses: async () => {
+    try {
+      const statuses = await prisma.leadStatus.findMany({
+        orderBy: { label: 'asc' },
+      });
+
+      const result: Record<string, { label: string; bgClass: string; textClass: string; borderClass: string }> = {};
+
+      for (const s of statuses) {
+        let colorObj = { bgClass: 'bg-primary/10', textClass: 'text-primary', borderClass: 'border-primary/20' };
+        if (s.color) {
+          try {
+            colorObj = JSON.parse(s.color);
+          } catch {
+            // ignore JSON parse error
+          }
+        }
+        result[s.value] = {
+          label: s.label,
+          ...colorObj,
+        };
+      }
+
+      return { success: true, statuses: result };
+    } catch (err: any) {
+      console.error('[WellnessLab getWellnessLeadStatuses Error]:', err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
+  createWellnessLeadStatus: async (data: { label: string; value: string; color?: any }) => {
+    try {
+      const { label, value, color } = data;
+      const colorStr = typeof color === 'object' ? JSON.stringify(color) : color;
+
+      const created = await prisma.leadStatus.upsert({
+        where: { value },
+        update: {
+          label,
+          color: colorStr,
+        },
+        create: {
+          label,
+          value,
+          color: colorStr,
+        },
+      });
+
+      return { success: true, leadStatus: created };
+    } catch (err: any) {
+      console.error('[WellnessLab createWellnessLeadStatus Error]:', err.message);
       return { success: false, error: err.message };
     }
   },

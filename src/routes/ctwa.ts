@@ -371,5 +371,128 @@ router.post('/urban/lead-statuses', async (req: Request, res: Response) => {
   return res.json(result);
 });
 
+// =========================================================================
+// WELLNESS LAB MODULE DEDICATED ROUTES
+// =========================================================================
+
+/**
+ * @route   POST /api/ctwa/wellness/webhook
+ * @desc    Incoming Webhook specifically for Wellness Lab device
+ */
+router.post('/wellness/webhook', async (req: Request, res: Response) => {
+  try {
+    console.log('📥 [Wellness Lab Webhook Received]:', JSON.stringify(req.body, null, 2));
+    const result = await ctwaBackendService.processWellnessWebhook(req.body);
+    return res.status(200).json({
+      success: true,
+      message: 'Wellness Lab message logged successfully',
+      data: result,
+    });
+  } catch (error: any) {
+    console.error('❌ [Wellness Lab Webhook Error]:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/ctwa/wellness/messages
+ * @desc    Get Wellness Lab message history with date & phone filters
+ */
+router.get('/wellness/messages', async (req: Request, res: Response) => {
+  const { filterType, startDate, endDate, startTime, endTime, direction, status, phone, search } = req.query;
+  const logs = await ctwaBackendService.getWellnessMessages({
+    filterType: filterType as string,
+    startDate: startDate as string,
+    endDate: endDate as string,
+    startTime: startTime as string,
+    endTime: endTime as string,
+    direction: direction as string,
+    status: status as string,
+    phone: phone as string,
+    search: search as string,
+  });
+  return res.json({ success: true, data: logs });
+});
+
+/**
+ * @route   GET /api/ctwa/wellness/contacts
+ * @desc    Get unique phone numbers (contacts) for Wellness Lab
+ */
+router.get('/wellness/contacts', async (req: Request, res: Response) => {
+  const { leadStatus, tag, unrepliedOnly, unreplied, inactivityDays, inactiveDays } = req.query;
+  const isUnreplied = unrepliedOnly === 'true' || unreplied === 'true';
+  const parsedInactivityDays = inactivityDays ? Number(inactivityDays) : inactiveDays ? Number(inactiveDays) : undefined;
+
+  const contacts = await ctwaBackendService.getWellnessContacts({
+    leadStatus: leadStatus ? String(leadStatus) : undefined,
+    tag: tag ? String(tag) : undefined,
+    unrepliedOnly: isUnreplied || undefined,
+    inactivityDays: parsedInactivityDays && !isNaN(parsedInactivityDays) ? parsedInactivityDays : undefined,
+  });
+  return res.json({ success: true, data: contacts });
+});
+
+/**
+ * @route   PATCH /api/ctwa/wellness/contacts/:phone
+ * @desc    Update subscriber lead status, tags, notes, and profile info
+ */
+router.patch('/wellness/contacts/:phone', async (req: Request, res: Response) => {
+  const { phone } = req.params;
+  const { customerName, leadStatus, tags, notes, email, city } = req.body;
+  const result = await ctwaBackendService.updateWellnessContact(phone, {
+    customerName,
+    leadStatus,
+    tags,
+    notes,
+    email,
+    city,
+  });
+  return res.json(result);
+});
+
+/**
+ * @route   POST /api/ctwa/wellness/send-bulk
+ * @desc    Send bulk text / media messages to selected phone numbers using Wellness Lab device
+ */
+router.post('/wellness/send-bulk', async (req: Request, res: Response) => {
+  const { phoneNumbers, message, mediaUrl, mediaType, delaySeconds } = req.body;
+  if (!phoneNumbers || !Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+    return res.status(400).json({ success: false, error: 'Recipient phone numbers array is required' });
+  }
+  if (!message && !mediaUrl) {
+    return res.status(400).json({ success: false, error: 'Message content or media URL is required' });
+  }
+
+  const result = await ctwaBackendService.sendWellnessBulkMessages({
+    phoneNumbers,
+    message: message || '',
+    mediaUrl,
+    mediaType,
+    delaySeconds: delaySeconds ? Number(delaySeconds) : undefined,
+  });
+
+  return res.json({ success: true, data: result });
+});
+
+/**
+ * @route   GET /api/ctwa/wellness/lead-statuses
+ * @desc    Get all custom & default lead statuses from database
+ */
+router.get('/wellness/lead-statuses', async (req: Request, res: Response) => {
+  const result = await ctwaBackendService.getWellnessLeadStatuses();
+  return res.json(result);
+});
+
+/**
+ * @route   POST /api/ctwa/wellness/lead-statuses
+ * @desc    Create/Upsert custom lead status in database
+ */
+router.post('/wellness/lead-statuses', async (req: Request, res: Response) => {
+  const { label, value, color } = req.body;
+  const result = await ctwaBackendService.createWellnessLeadStatus({ label, value, color });
+  return res.json(result);
+});
+
 export default router;
+
 
