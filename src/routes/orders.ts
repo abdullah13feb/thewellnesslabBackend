@@ -461,12 +461,68 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
         const meetsMinPurchase = subtotal >= coupon.minPurchase;
 
         if (!isExpired && meetsMinPurchase) {
-          if (coupon.type === "PERCENTAGE") {
-            discount = (subtotal * coupon.discount) / 100;
-          } else {
-            discount = coupon.discount;
+          let eligibleSubtotal = subtotal;
+          let isEligible = true;
+
+          if (coupon.applicableProducts && coupon.applicableProducts.length > 0) {
+            const productIds = (items || []).map((it: any) => String(it.productId || it.id || ""));
+            const dbProducts = await prisma.product.findMany({
+              where: {
+                OR: [
+                  { id: { in: productIds } },
+                  { slug: { in: productIds } }
+                ]
+              },
+              select: { id: true, slug: true, name: true }
+            });
+
+            const productMap = new Map<string, { id: string; slug: string; name: string }>();
+            dbProducts.forEach(p => {
+              productMap.set(p.id, p);
+              productMap.set(p.slug, p);
+            });
+
+            const allowedSet = new Set(coupon.applicableProducts.map(p => p.toLowerCase().trim()));
+
+            const eligibleItems = (items || []).filter((item: any) => {
+              const rawId = String(item.productId || item.id || "");
+              const rawName = String(item.name || "").toLowerCase();
+              const dbProduct = productMap.get(rawId);
+              const dbSlug = dbProduct?.slug?.toLowerCase();
+              const dbId = dbProduct?.id?.toLowerCase();
+              const dbName = dbProduct?.name?.toLowerCase();
+
+              for (const allowed of allowedSet) {
+                if (allowed === rawId.toLowerCase()) return true;
+                if (dbSlug && allowed === dbSlug) return true;
+                if (dbId && allowed === dbId) return true;
+                if (allowed.includes("pro") && (rawName.includes("rex pro") || (dbName && dbName.includes("rex pro")))) return true;
+                if (allowed.includes("core") && (rawName.includes("rex core") || (dbName && dbName.includes("rex core")))) return true;
+                if (allowed.includes("ultra") && (rawName.includes("rex ultra") || (dbName && dbName.includes("rex ultra")))) return true;
+                if (allowed.includes("prestige") && (rawName.includes("rex prestige") || (dbName && dbName.includes("rex prestige")))) return true;
+              }
+              return false;
+            });
+
+            if (eligibleItems.length === 0) {
+              isEligible = false;
+            } else {
+              eligibleSubtotal = eligibleItems.reduce((sum: number, it: any) => {
+                const itemPrice = Number(it.price) || 0;
+                const itemQty = Number(it.quantity) || 1;
+                return sum + (itemPrice * itemQty);
+              }, 0);
+            }
           }
-          validatedCouponCode = coupon.code;
+
+          if (isEligible) {
+            if (coupon.type === "PERCENTAGE") {
+              discount = (eligibleSubtotal * coupon.discount) / 100;
+            } else {
+              discount = Math.min(coupon.discount, eligibleSubtotal);
+            }
+            validatedCouponCode = coupon.code;
+          }
         }
       }
     }

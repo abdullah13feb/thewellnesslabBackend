@@ -60,6 +60,7 @@ const allowedOrigins = [
   "https://production.d3nct9ywhbsaue.amplifyapp.com",
   "https://www.thewellnesslab.ae",
   "https://thewellnesslab.ae",
+  "http://localhost:3000",
   "http://localhost:8080",
   "http://localhost:5173",
   "http://localhost:5174",

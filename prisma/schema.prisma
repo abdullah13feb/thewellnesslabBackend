@@ -150,16 +150,17 @@ model Setting {
 }
 
 model Coupon {
-  id          String    @id @default(cuid())
-  code        String    @unique
-  discount    Float
-  type        String    @default("FIXED") // FIXED or PERCENTAGE
-  isActive    Boolean   @default(true)
-  description String?
-  expiry      DateTime?
-  minPurchase Float     @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  code               String    @unique
+  discount           Float
+  type               String    @default("FIXED") // FIXED or PERCENTAGE
+  isActive           Boolean   @default(true)
+  description        String?
+  expiry             DateTime?
+  minPurchase        Float     @default(0)
+  applicableProducts String[]  @default([])
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 model ContactSubmission {
