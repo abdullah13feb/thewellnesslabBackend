@@ -1011,19 +1011,67 @@ export const ctwaBackendService = {
     const rawPayload = payload?.rawPayload || payload || {};
     const innerPayload = rawPayload?.payload || rawPayload?.data || rawPayload || {};
 
-    const rawPhone = payload.phone || innerPayload.from || innerPayload.chat_id || rawPayload.from || rawPayload.phone || rawPayload.phoneNumber || '+971500000000';
-    const phoneNumber = String(rawPhone).includes('@') ? String(rawPhone).split('@')[0] : String(rawPhone);
+    const isFromMe = Boolean(
+      innerPayload.is_from_me ??
+      payload.is_from_me ??
+      innerPayload.from_me ??
+      payload.from_me ??
+      innerPayload.key?.fromMe ??
+      rawPayload.from_me ??
+      rawPayload.is_from_me
+    );
+    const direction = isFromMe ? 'Outgoing' : 'Incoming';
+
+    // In WhatsApp 1-on-1 chats:
+    // When isFromMe is true, `from` is our device, and `chat_id`/`to`/`chat_jid` is the customer!
+    // When isFromMe is false, `chat_id` and `from` are both the customer.
+    let rawPhone = '';
+    if (isFromMe) {
+      rawPhone = innerPayload.chat_id || innerPayload.chat_jid || innerPayload.to || innerPayload.recipient || innerPayload.key?.remoteJid || payload.phone || rawPayload.chat_id || rawPayload.to || '';
+    } else {
+      rawPhone = payload.phone || innerPayload.chat_id || innerPayload.chat_jid || innerPayload.from || rawPayload.from || rawPayload.phone || rawPayload.phoneNumber || '';
+    }
+
+    let phoneNumber = String(rawPhone).includes('@') ? String(rawPhone).split('@')[0].replace(/[^0-9]/g, '') : String(rawPhone).replace(/[^0-9]/g, '');
+
+    // Prevent saving messages under the business's own device phone numbers
+    const ownDeviceNumbers = ['971559206585', '971585865195'];
+    if (ownDeviceNumbers.includes(phoneNumber) || !phoneNumber) {
+      const alt = (innerPayload.chat_id || innerPayload.chat_jid || innerPayload.to || innerPayload.recipient || '').replace(/[^0-9]/g, '');
+      if (alt && !ownDeviceNumbers.includes(alt)) {
+        phoneNumber = alt;
+      }
+    }
+
+    if (!phoneNumber || ownDeviceNumbers.includes(phoneNumber)) {
+      console.warn(`⚠️ [UrbanSauna DB Log Warning] Skipped logging message for device's own number (${phoneNumber})`);
+      return { id: `urban-skipped-${Date.now()}`, phoneNumber, skipped: true };
+    }
 
     let msgContent = payload.message || innerPayload.body || rawPayload.message || rawPayload.body || '';
     if (typeof msgContent === 'object' && msgContent !== null) {
       msgContent = msgContent.conversation || msgContent.text || msgContent.caption || JSON.stringify(msgContent);
     }
     const messageText = String(msgContent).trim();
-    const customerName = payload.customerName || innerPayload.from_name || innerPayload.pushName || rawPayload.name || 'WhatsApp Customer';
-    const isFromMe = Boolean(innerPayload.is_from_me || payload.is_from_me);
-    const direction = isFromMe ? 'Outgoing' : 'Incoming';
+
+    // Preserve customer name (never overwrite with 'Urban Sauna')
+    let customerName = 'WhatsApp Customer';
+    if (isFromMe) {
+      try {
+        const existing = await prisma.urbanSaunaContact.findUnique({ where: { phoneNumber } });
+        customerName = existing?.customerName && existing.customerName !== 'Urban Sauna' && existing.customerName !== 'The Wellness Lab' ? existing.customerName : 'WhatsApp Customer';
+      } catch {
+        customerName = 'WhatsApp Customer';
+      }
+    } else {
+      const rawName = payload.customerName || innerPayload.from_name || innerPayload.pushName || rawPayload.name || '';
+      if (rawName && rawName !== 'Urban Sauna' && rawName !== 'The Wellness Lab') {
+        customerName = rawName;
+      }
+    }
+
     const mediaUrl = payload.mediaUrl || innerPayload.media_url || innerPayload.url || null;
-    const mediaType = payload.mediaType || innerPayload.media_type || null;
+    const mediaType = payload.mediaType || innerPayload.media_type || (mediaUrl ? 'image' : null);
 
     const timeStr = new Date().toLocaleTimeString('en-US', {
       timeZone: 'Asia/Dubai',
@@ -1050,6 +1098,29 @@ export const ctwaBackendService = {
         },
       });
       console.log(`✅ [UrbanSauna DB Log] ${direction} message logged for ${phoneNumber}`);
+
+      // Upsert contact in DB
+      try {
+        await prisma.urbanSaunaContact.upsert({
+          where: { phoneNumber },
+          update: {
+            customerName: customerName !== 'WhatsApp Customer' ? customerName : undefined,
+            updatedAt: new Date(),
+          },
+          create: {
+            phoneNumber,
+            customerName,
+            leadStatus: 'NEW_LEAD',
+            tags: [],
+            notes: '',
+            email: '',
+            city: '',
+          },
+        });
+      } catch (contactErr: any) {
+        console.warn('[Urban Contact Upsert Warning]:', contactErr.message);
+      }
+
       return log;
     } catch (err: any) {
       console.error('❌ [UrbanSauna DB Log Error]:', err.message);
@@ -1171,8 +1242,11 @@ export const ctwaBackendService = {
         unreadCount: number;
       }>();
 
+      const ownDeviceNumbers = ['971559206585', '971585865195'];
+
       for (const log of allLogs) {
         const phone = log.phoneNumber;
+        if (ownDeviceNumbers.includes(phone)) continue;
         const saved = dbContactsMap.get(phone);
 
         if (!contactsMap.has(phone)) {
@@ -1199,6 +1273,7 @@ export const ctwaBackendService = {
 
       // Add contacts in DB that might not have logs yet
       for (const saved of savedContacts) {
+        if (ownDeviceNumbers.includes(saved.phoneNumber)) continue;
         if (!contactsMap.has(saved.phoneNumber)) {
           contactsMap.set(saved.phoneNumber, {
             phoneNumber: saved.phoneNumber,
@@ -1510,25 +1585,238 @@ export const ctwaBackendService = {
     }
   },
 
+  syncUrbanChatMessages: async (phone: string) => {
+    try {
+      const cleanPhone = phone.replace(/[^0-9]/g, '');
+      if (!cleanPhone || cleanPhone === '971559206585') {
+        return { success: false, error: 'Invalid phone number or device own number' };
+      }
+      const fullJid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
+      const cfg = await ctwaBackendService.getGOWAConfig();
+      const urbanDeviceId = process.env.URBAN_SAUNA_DEVICE_ID || process.env.GOWA_URBAN_DEVICE_ID || process.env.URBAN_DEVICE_ID || 'UrbanSauna';
+
+      const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
+      const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
+
+      const reqConfig: any = {
+        timeout: 15000,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-Id': urbanDeviceId,
+        },
+      };
+      if (authUser && authPass) {
+        reqConfig.auth = { username: authUser, password: authPass };
+      }
+
+      console.log(`🔄 [Urban GOWA Sync] Fetching messages for ${fullJid} from ${cfg.gowaApiUrl}...`);
+      const resp = await axios.get(`${cfg.gowaApiUrl}/chat/${fullJid}/messages`, reqConfig);
+      const data = resp.data?.results?.data || resp.data?.data || [];
+      const chatInfo = resp.data?.results?.chat_info || resp.data?.chat_info || {};
+
+      console.log(`📥 [Urban GOWA Sync] Received ${data.length} messages from GOWA for ${cleanPhone}`);
+
+      let contactName = chatInfo.name || 'WhatsApp Customer';
+      if (contactName === 'Urban Sauna' || contactName === 'The Wellness Lab') {
+        contactName = 'WhatsApp Customer';
+      }
+
+      let newCount = 0;
+      for (const msg of data) {
+        const isFromMe = Boolean(msg.is_from_me);
+        const direction = isFromMe ? 'Outgoing' : 'Incoming';
+        const content = msg.content || '';
+        const mediaUrl = msg.url || null;
+        const mediaType = msg.media_type || (mediaUrl ? 'image' : null);
+        const msgCreatedAt = msg.timestamp ? new Date(msg.timestamp) : new Date(msg.created_at || Date.now());
+
+        const timeStr = msgCreatedAt.toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Dubai',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        });
+
+        if (!isFromMe && msg.sender_display_name && msg.sender_display_name !== 'Urban Sauna' && contactName === 'WhatsApp Customer') {
+          contactName = msg.sender_display_name;
+        }
+
+        // Check if message already exists in DB to avoid duplicate
+        const minTime = new Date(msgCreatedAt.getTime() - 120000);
+        const maxTime = new Date(msgCreatedAt.getTime() + 120000);
+
+        const exists = await prisma.urbanSaunaMessageLog.findFirst({
+          where: {
+            phoneNumber: cleanPhone,
+            direction,
+            messageContent: content,
+            createdAt: { gte: minTime, lte: maxTime },
+          },
+        });
+
+        if (!exists) {
+          await prisma.urbanSaunaMessageLog.create({
+            data: {
+              timestamp: timeStr,
+              phoneNumber: cleanPhone,
+              customerName: contactName,
+              direction,
+              messageContent: content,
+              mediaUrl,
+              mediaType,
+              status: isFromMe ? 'Sent' : 'Received',
+              deviceId: urbanDeviceId,
+              createdAt: msgCreatedAt,
+            },
+          });
+          newCount++;
+        }
+      }
+
+      // Upsert contact in DB
+      await prisma.urbanSaunaContact.upsert({
+        where: { phoneNumber: cleanPhone },
+        update: {
+          customerName: contactName !== 'WhatsApp Customer' ? contactName : undefined,
+          updatedAt: new Date(),
+        },
+        create: {
+          phoneNumber: cleanPhone,
+          customerName: contactName,
+          leadStatus: 'NEW_LEAD',
+          tags: [],
+          notes: '',
+          email: '',
+          city: '',
+        },
+      });
+
+      console.log(`✅ [Urban GOWA Sync] Successfully synced ${newCount} new messages for ${cleanPhone}`);
+      return { success: true, count: data.length, newMessagesCount: newCount };
+    } catch (err: any) {
+      console.error(`❌ [Urban GOWA Sync Error]:`, err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
+  syncUrbanAllChats: async () => {
+    try {
+      const cfg = await ctwaBackendService.getGOWAConfig();
+      const urbanDeviceId = process.env.URBAN_SAUNA_DEVICE_ID || process.env.GOWA_URBAN_DEVICE_ID || process.env.URBAN_DEVICE_ID || 'UrbanSauna';
+
+      const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
+      const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
+
+      const reqConfig: any = {
+        timeout: 15000,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-Id': urbanDeviceId,
+        },
+      };
+      if (authUser && authPass) {
+        reqConfig.auth = { username: authUser, password: authPass };
+      }
+
+      console.log(`🔄 [Urban GOWA Sync All] Fetching chats from ${cfg.gowaApiUrl}/chats...`);
+      const resp = await axios.get(`${cfg.gowaApiUrl}/chats`, reqConfig);
+      const chats = resp.data?.results?.data || resp.data?.results || [];
+
+      console.log(`📥 [Urban GOWA Sync All] Found ${chats.length} chats in GOWA for UrbanSauna`);
+
+      let totalSynced = 0;
+      for (const chat of chats) {
+        const jid = chat.jid || '';
+        const cleanPhone = jid.replace(/[^0-9]/g, '');
+        if (cleanPhone && cleanPhone !== '971559206585' && !jid.includes('@g.us')) {
+          await ctwaBackendService.syncUrbanChatMessages(cleanPhone);
+          totalSynced++;
+        }
+      }
+
+      // Cleanup misattributed logs under 971559206585
+      try {
+        const deleted = await prisma.urbanSaunaMessageLog.deleteMany({
+          where: { phoneNumber: '971559206585' },
+        });
+        await prisma.urbanSaunaContact.deleteMany({
+          where: { phoneNumber: '971559206585' },
+        });
+        console.log(`🧹 [Urban Cleanup] Purged ${deleted.count} misattributed messages from 971559206585`);
+      } catch (cleanErr: any) {
+        console.warn('[Urban Cleanup Warning]:', cleanErr.message);
+      }
+
+      return { success: true, syncedChatsCount: totalSynced };
+    } catch (err: any) {
+      console.error(`❌ [Urban GOWA Sync All Error]:`, err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
   // ─── DEDICATED WELLNESS LAB MODULE METHODS ─────────────────────────
 
   processWellnessWebhook: async (payload: any) => {
     const rawPayload = payload?.rawPayload || payload || {};
     const innerPayload = rawPayload?.payload || rawPayload?.data || rawPayload || {};
 
-    const rawPhone = payload.phone || innerPayload.from || innerPayload.chat_id || rawPayload.from || rawPayload.phone || rawPayload.phoneNumber || '+971500000000';
-    const phoneNumber = String(rawPhone).includes('@') ? String(rawPhone).split('@')[0] : String(rawPhone);
+    const isFromMe = Boolean(
+      innerPayload.is_from_me ??
+      payload.is_from_me ??
+      innerPayload.from_me ??
+      payload.from_me ??
+      innerPayload.key?.fromMe ??
+      rawPayload.from_me ??
+      rawPayload.is_from_me
+    );
+    const direction = isFromMe ? 'Outgoing' : 'Incoming';
+
+    let rawPhone = '';
+    if (isFromMe) {
+      rawPhone = innerPayload.chat_id || innerPayload.chat_jid || innerPayload.to || innerPayload.recipient || innerPayload.key?.remoteJid || payload.phone || rawPayload.chat_id || rawPayload.to || '';
+    } else {
+      rawPhone = payload.phone || innerPayload.chat_id || innerPayload.chat_jid || innerPayload.from || rawPayload.from || rawPayload.phone || rawPayload.phoneNumber || '';
+    }
+
+    let phoneNumber = String(rawPhone).includes('@') ? String(rawPhone).split('@')[0].replace(/[^0-9]/g, '') : String(rawPhone).replace(/[^0-9]/g, '');
+
+    const ownDeviceNumbers = ['971559206585', '971585865195'];
+    if (ownDeviceNumbers.includes(phoneNumber) || !phoneNumber) {
+      const alt = (innerPayload.chat_id || innerPayload.chat_jid || innerPayload.to || innerPayload.recipient || '').replace(/[^0-9]/g, '');
+      if (alt && !ownDeviceNumbers.includes(alt)) {
+        phoneNumber = alt;
+      }
+    }
+
+    if (!phoneNumber || ownDeviceNumbers.includes(phoneNumber)) {
+      console.warn(`⚠️ [WellnessLab DB Log Warning] Skipped logging message for device's own number (${phoneNumber})`);
+      return { id: `wellness-skipped-${Date.now()}`, phoneNumber, skipped: true };
+    }
 
     let msgContent = payload.message || innerPayload.body || rawPayload.message || rawPayload.body || '';
     if (typeof msgContent === 'object' && msgContent !== null) {
       msgContent = msgContent.conversation || msgContent.text || msgContent.caption || JSON.stringify(msgContent);
     }
     const messageText = String(msgContent).trim();
-    const customerName = payload.customerName || innerPayload.from_name || innerPayload.pushName || rawPayload.name || 'WhatsApp Customer';
-    const isFromMe = Boolean(innerPayload.is_from_me || payload.is_from_me);
-    const direction = isFromMe ? 'Outgoing' : 'Incoming';
+
+    let customerName = 'WhatsApp Customer';
+    if (isFromMe) {
+      try {
+        const existing = await prisma.wellnessLabContact.findUnique({ where: { phoneNumber } });
+        customerName = existing?.customerName && existing.customerName !== 'Urban Sauna' && existing.customerName !== 'The Wellness Lab' ? existing.customerName : 'WhatsApp Customer';
+      } catch {
+        customerName = 'WhatsApp Customer';
+      }
+    } else {
+      const rawName = payload.customerName || innerPayload.from_name || innerPayload.pushName || rawPayload.name || '';
+      if (rawName && rawName !== 'Urban Sauna' && rawName !== 'The Wellness Lab') {
+        customerName = rawName;
+      }
+    }
+
     const mediaUrl = payload.mediaUrl || innerPayload.media_url || innerPayload.url || null;
-    const mediaType = payload.mediaType || innerPayload.media_type || null;
+    const mediaType = payload.mediaType || innerPayload.media_type || (mediaUrl ? 'image' : null);
 
     const timeStr = new Date().toLocaleTimeString('en-US', {
       timeZone: 'Asia/Dubai',
@@ -1555,6 +1843,29 @@ export const ctwaBackendService = {
         },
       });
       console.log(`✅ [WellnessLab DB Log] ${direction} message logged for ${phoneNumber}`);
+
+      // Upsert contact in DB
+      try {
+        await prisma.wellnessLabContact.upsert({
+          where: { phoneNumber },
+          update: {
+            customerName: customerName !== 'WhatsApp Customer' ? customerName : undefined,
+            updatedAt: new Date(),
+          },
+          create: {
+            phoneNumber,
+            customerName,
+            leadStatus: 'NEW_LEAD',
+            tags: [],
+            notes: '',
+            email: '',
+            city: '',
+          },
+        });
+      } catch (contactErr: any) {
+        console.warn('[Wellness Contact Upsert Warning]:', contactErr.message);
+      }
+
       return log;
     } catch (err: any) {
       console.error('❌ [WellnessLab DB Log Error]:', err.message);
@@ -1674,8 +1985,11 @@ export const ctwaBackendService = {
         unreadCount: number;
       }>();
 
+      const ownDeviceNumbers = ['971559206585', '971585865195'];
+
       for (const log of allLogs) {
         const phone = log.phoneNumber;
+        if (ownDeviceNumbers.includes(phone)) continue;
         const saved = dbContactsMap.get(phone);
 
         if (!contactsMap.has(phone)) {
@@ -1701,6 +2015,7 @@ export const ctwaBackendService = {
       }
 
       for (const saved of savedContacts) {
+        if (ownDeviceNumbers.includes(saved.phoneNumber)) continue;
         if (!contactsMap.has(saved.phoneNumber)) {
           contactsMap.set(saved.phoneNumber, {
             phoneNumber: saved.phoneNumber,
@@ -1995,6 +2310,175 @@ export const ctwaBackendService = {
       return { success: true, leadStatus: created };
     } catch (err: any) {
       console.error('[WellnessLab createWellnessLeadStatus Error]:', err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
+  syncWellnessChatMessages: async (phone: string) => {
+    try {
+      const cleanPhone = phone.replace(/[^0-9]/g, '');
+      if (!cleanPhone || cleanPhone === '971585865195') {
+        return { success: false, error: 'Invalid phone number or device own number' };
+      }
+      const fullJid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
+      const cfg = await ctwaBackendService.getGOWAConfig();
+      const wellnessDeviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'Wellnesslab';
+
+      const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
+      const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
+
+      const reqConfig: any = {
+        timeout: 15000,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-Id': wellnessDeviceId,
+        },
+      };
+      if (authUser && authPass) {
+        reqConfig.auth = { username: authUser, password: authPass };
+      }
+
+      console.log(`🔄 [Wellness GOWA Sync] Fetching messages for ${fullJid} from ${cfg.gowaApiUrl}...`);
+      const resp = await axios.get(`${cfg.gowaApiUrl}/chat/${fullJid}/messages`, reqConfig);
+      const data = resp.data?.results?.data || resp.data?.data || [];
+      const chatInfo = resp.data?.results?.chat_info || resp.data?.chat_info || {};
+
+      console.log(`📥 [Wellness GOWA Sync] Received ${data.length} messages from GOWA for ${cleanPhone}`);
+
+      let contactName = chatInfo.name || 'WhatsApp Customer';
+      if (contactName === 'Urban Sauna' || contactName === 'The Wellness Lab') {
+        contactName = 'WhatsApp Customer';
+      }
+
+      let newCount = 0;
+      for (const msg of data) {
+        const isFromMe = Boolean(msg.is_from_me);
+        const direction = isFromMe ? 'Outgoing' : 'Incoming';
+        const content = msg.content || '';
+        const mediaUrl = msg.url || null;
+        const mediaType = msg.media_type || (mediaUrl ? 'image' : null);
+        const msgCreatedAt = msg.timestamp ? new Date(msg.timestamp) : new Date(msg.created_at || Date.now());
+
+        const timeStr = msgCreatedAt.toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Dubai',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        });
+
+        if (!isFromMe && msg.sender_display_name && msg.sender_display_name !== 'The Wellness Lab' && contactName === 'WhatsApp Customer') {
+          contactName = msg.sender_display_name;
+        }
+
+        const minTime = new Date(msgCreatedAt.getTime() - 120000);
+        const maxTime = new Date(msgCreatedAt.getTime() + 120000);
+
+        const exists = await prisma.wellnessLabMessageLog.findFirst({
+          where: {
+            phoneNumber: cleanPhone,
+            direction,
+            messageContent: content,
+            createdAt: { gte: minTime, lte: maxTime },
+          },
+        });
+
+        if (!exists) {
+          await prisma.wellnessLabMessageLog.create({
+            data: {
+              timestamp: timeStr,
+              phoneNumber: cleanPhone,
+              customerName: contactName,
+              direction,
+              messageContent: content,
+              mediaUrl,
+              mediaType,
+              status: isFromMe ? 'Sent' : 'Received',
+              deviceId: wellnessDeviceId,
+              createdAt: msgCreatedAt,
+            },
+          });
+          newCount++;
+        }
+      }
+
+      // Upsert contact in DB
+      await prisma.wellnessLabContact.upsert({
+        where: { phoneNumber: cleanPhone },
+        update: {
+          customerName: contactName !== 'WhatsApp Customer' ? contactName : undefined,
+          updatedAt: new Date(),
+        },
+        create: {
+          phoneNumber: cleanPhone,
+          customerName: contactName,
+          leadStatus: 'NEW_LEAD',
+          tags: [],
+          notes: '',
+          email: '',
+          city: '',
+        },
+      });
+
+      console.log(`✅ [Wellness GOWA Sync] Successfully synced ${newCount} new messages for ${cleanPhone}`);
+      return { success: true, count: data.length, newMessagesCount: newCount };
+    } catch (err: any) {
+      console.error(`❌ [Wellness GOWA Sync Error]:`, err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
+  syncWellnessAllChats: async () => {
+    try {
+      const cfg = await ctwaBackendService.getGOWAConfig();
+      const wellnessDeviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'Wellnesslab';
+
+      const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
+      const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
+
+      const reqConfig: any = {
+        timeout: 15000,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-Id': wellnessDeviceId,
+        },
+      };
+      if (authUser && authPass) {
+        reqConfig.auth = { username: authUser, password: authPass };
+      }
+
+      console.log(`🔄 [Wellness GOWA Sync All] Fetching chats from ${cfg.gowaApiUrl}/chats...`);
+      const resp = await axios.get(`${cfg.gowaApiUrl}/chats`, reqConfig);
+      const chats = resp.data?.results?.data || resp.data?.results || [];
+
+      console.log(`📥 [Wellness GOWA Sync All] Found ${chats.length} chats in GOWA for Wellnesslab`);
+
+      let totalSynced = 0;
+      for (const chat of chats) {
+        const jid = chat.jid || '';
+        const cleanPhone = jid.replace(/[^0-9]/g, '');
+        if (cleanPhone && cleanPhone !== '971585865195' && !jid.includes('@g.us')) {
+          await ctwaBackendService.syncWellnessChatMessages(cleanPhone);
+          totalSynced++;
+        }
+      }
+
+      // Cleanup misattributed logs under 971585865195
+      try {
+        const deleted = await prisma.wellnessLabMessageLog.deleteMany({
+          where: { phoneNumber: '971585865195' },
+        });
+        await prisma.wellnessLabContact.deleteMany({
+          where: { phoneNumber: '971585865195' },
+        });
+        console.log(`🧹 [Wellness Cleanup] Purged ${deleted.count} misattributed messages from 971585865195`);
+      } catch (cleanErr: any) {
+        console.warn('[Wellness Cleanup Warning]:', cleanErr.message);
+      }
+
+      return { success: true, syncedChatsCount: totalSynced };
+    } catch (err: any) {
+      console.error(`❌ [Wellness GOWA Sync All Error]:`, err.message);
       return { success: false, error: err.message };
     }
   },

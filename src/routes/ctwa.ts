@@ -371,6 +371,31 @@ router.post('/urban/lead-statuses', async (req: Request, res: Response) => {
   return res.json(result);
 });
 
+/**
+ * @route   POST /api/ctwa/urban/sync
+ * @desc    Sync chat messages from GOWA into database (single phone or all chats)
+ */
+router.post('/urban/sync', async (req: Request, res: Response) => {
+  const { phone } = req.body || {};
+  if (phone) {
+    const result = await ctwaBackendService.syncUrbanChatMessages(String(phone));
+    return res.json(result);
+  } else {
+    const result = await ctwaBackendService.syncUrbanAllChats();
+    return res.json(result);
+  }
+});
+
+/**
+ * @route   POST /api/ctwa/urban/sync/:phone
+ * @desc    Sync specific chat messages from GOWA into database
+ */
+router.post('/urban/sync/:phone', async (req: Request, res: Response) => {
+  const { phone } = req.params;
+  const result = await ctwaBackendService.syncUrbanChatMessages(phone);
+  return res.json(result);
+});
+
 // =========================================================================
 // WELLNESS LAB MODULE DEDICATED ROUTES
 // =========================================================================
@@ -490,6 +515,31 @@ router.get('/wellness/lead-statuses', async (req: Request, res: Response) => {
 router.post('/wellness/lead-statuses', async (req: Request, res: Response) => {
   const { label, value, color } = req.body;
   const result = await ctwaBackendService.createWellnessLeadStatus({ label, value, color });
+  return res.json(result);
+});
+
+/**
+ * @route   POST /api/ctwa/wellness/sync
+ * @desc    Sync chat messages from GOWA into database (single phone or all chats)
+ */
+router.post('/wellness/sync', async (req: Request, res: Response) => {
+  const { phone } = req.body || {};
+  if (phone) {
+    const result = await ctwaBackendService.syncWellnessChatMessages(String(phone));
+    return res.json(result);
+  } else {
+    const result = await ctwaBackendService.syncWellnessAllChats();
+    return res.json(result);
+  }
+});
+
+/**
+ * @route   POST /api/ctwa/wellness/sync/:phone
+ * @desc    Sync specific chat messages from GOWA into database
+ */
+router.post('/wellness/sync/:phone', async (req: Request, res: Response) => {
+  const { phone } = req.params;
+  const result = await ctwaBackendService.syncWellnessChatMessages(phone);
   return res.json(result);
 });
 
