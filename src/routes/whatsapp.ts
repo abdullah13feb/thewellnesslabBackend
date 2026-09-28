@@ -220,7 +220,7 @@ router.get("/campaigns/:id", async (req, res) => {
 
 // Create and trigger campaign
 router.post("/campaigns", async (req, res) => {
-  const { name, templateId, customBody, scheduledAt, recipients, sessionId } = req.body;
+  const { name, templateId, customBody, scheduledAt, recipients, sessionId, deviceId, delaySeconds, batchSize, batchDelaySeconds } = req.body;
   
   if (!name || (!templateId && !customBody)) {
     return res.status(400).json({ success: false, error: "Campaign name and message content (template or custom text) are required" });
@@ -239,11 +239,15 @@ router.post("/campaigns", async (req, res) => {
       data: {
         name,
         sessionId: sessionId || "default",
+        deviceId: deviceId || "WellnessLab",
         templateId: templateId || null,
         customBody: customBody || null,
         status: isImmediate ? "SENDING" : "SCHEDULED",
         scheduledAt: scheduleDate,
         totalCount: recipients.length,
+        delaySeconds: delaySeconds ? Number(delaySeconds) : 5.0,
+        batchSize: batchSize ? Number(batchSize) : 10,
+        batchDelaySeconds: batchDelaySeconds ? Number(batchDelaySeconds) : 30.0,
         recipients: {
           create: recipients.map((r: any) => ({
             phone: normalizePhoneNumber(r.phone, false),

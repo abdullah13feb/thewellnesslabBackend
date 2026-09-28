@@ -243,21 +243,25 @@ model WhatsappTemplate {
 }
 
 model WhatsappCampaign {
-  id           String                      @id @default(cuid())
-  name         String
-  sessionId    String                      @default("default")
-  batchId      String?                     // OpenWA batch ID
-  templateId   String?
-  template     WhatsappTemplate?           @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  customBody   String?                     // fallback message template
-  status       String                      @default("DRAFT") // DRAFT, SCHEDULED, SENDING, COMPLETED, FAILED, CANCELLED
-  scheduledAt  DateTime?
-  totalCount   Int                         @default(0)
-  successCount Int                         @default(0)
-  failCount    Int                         @default(0)
-  recipients   WhatsappCampaignRecipient[]
-  createdAt    DateTime                    @default(now())
-  updatedAt    DateTime                    @updatedAt
+  id                 String                      @id @default(cuid())
+  name               String
+  sessionId          String                      @default("default")
+  deviceId           String                      @default("WellnessLab") // GOWA Device ID
+  batchId            String?                     // OpenWA batch ID
+  templateId         String?
+  template           WhatsappTemplate?           @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  customBody         String?                     // fallback message template
+  status             String                      @default("DRAFT") // DRAFT, SCHEDULED, SENDING, COMPLETED, FAILED, CANCELLED
+  scheduledAt        DateTime?
+  totalCount         Int                         @default(0)
+  successCount       Int                         @default(0)
+  failCount          Int                         @default(0)
+  delaySeconds       Float                       @default(5.0)  // Configurable delay in seconds between individual messages
+  batchSize          Int                         @default(10)   // Configurable batch size (number of messages per batch)
+  batchDelaySeconds  Float                       @default(30.0) // Configurable batch pause delay in seconds after each batch
+  recipients         WhatsappCampaignRecipient[]
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
 }
 
 model WhatsappCampaignRecipient {
@@ -728,8 +732,7 @@ model WellnessLabMessageLog {
   flowName       String   @default("")
   nodeId         String   @default("")
   nodeLabel      String   @default("")
-  status         String   @default("Sent")
-  deviceId       String   @default("adil")
+  deviceId       String   @default("WellnessLab")
   createdAt      DateTime @default(now())
 
   @@index([createdAt])

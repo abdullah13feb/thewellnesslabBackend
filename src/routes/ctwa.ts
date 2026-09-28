@@ -459,7 +459,7 @@ router.get('/wellness/contacts', async (req: Request, res: Response) => {
 
 /**
  * @route   PATCH /api/ctwa/wellness/contacts/:phone
- * @desc    Update subscriber lead status, tags, notes, and profile info
+ * @desc    Update Wellness Lab subscriber lead status, tags, notes, and profile info
  */
 router.patch('/wellness/contacts/:phone', async (req: Request, res: Response) => {
   const { phone } = req.params;
@@ -477,7 +477,7 @@ router.patch('/wellness/contacts/:phone', async (req: Request, res: Response) =>
 
 /**
  * @route   POST /api/ctwa/wellness/send-bulk
- * @desc    Send bulk text / media messages to selected phone numbers using Wellness Lab device
+ * @desc    Send bulk text / media messages using Wellness Lab GOWA device
  */
 router.post('/wellness/send-bulk', async (req: Request, res: Response) => {
   const { phoneNumbers, message, mediaUrl, mediaType, delaySeconds } = req.body;
@@ -501,7 +501,7 @@ router.post('/wellness/send-bulk', async (req: Request, res: Response) => {
 
 /**
  * @route   GET /api/ctwa/wellness/lead-statuses
- * @desc    Get all custom & default lead statuses from database
+ * @desc    Get all custom & default lead statuses for Wellness Lab
  */
 router.get('/wellness/lead-statuses', async (req: Request, res: Response) => {
   const result = await ctwaBackendService.getWellnessLeadStatuses();
@@ -510,7 +510,7 @@ router.get('/wellness/lead-statuses', async (req: Request, res: Response) => {
 
 /**
  * @route   POST /api/ctwa/wellness/lead-statuses
- * @desc    Create/Upsert custom lead status in database
+ * @desc    Create/Upsert custom lead status for Wellness Lab
  */
 router.post('/wellness/lead-statuses', async (req: Request, res: Response) => {
   const { label, value, color } = req.body;

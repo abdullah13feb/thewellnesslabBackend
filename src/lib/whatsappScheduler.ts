@@ -173,11 +173,18 @@ export async function processCampaign(campaignId: string) {
     console.log(`🚀 Starting sequential WhatsApp campaign delivery for: ${campaign.name}. Total: ${campaign.recipients.length}`);
 
     const hasMedia = campaign.template && campaign.template.type !== "TEXT" && campaign.template.mediaUrl;
+    const deviceId = (campaign as any).deviceId || "WellnessLab";
+    const delaySeconds = Number((campaign as any).delaySeconds ?? 5);
+    const batchSize = Number((campaign as any).batchSize ?? 10);
+    const batchDelaySeconds = Number((campaign as any).batchDelaySeconds ?? 30);
     
     let successCount = 0;
     let failCount = 0;
+    let processedInCurrentBatch = 0;
 
-    for (const recipient of campaign.recipients) {
+    for (let i = 0; i < campaign.recipients.length; i++) {
+      const recipient = campaign.recipients[i];
+
       // 1. Check if campaign has been CANCELLED by the user
       const checkCampaign = await prisma.whatsappCampaign.findUnique({
         where: { id: campaignId },
@@ -210,7 +217,7 @@ export async function processCampaign(campaignId: string) {
         messageText = messageText.replace(placeholderRegex, value || "");
       }
 
-      // 3. Dispatch the message
+      // 3. Dispatch the message via GOWA API
       let success = false;
       try {
         if (hasMedia) {
@@ -219,10 +226,16 @@ export async function processCampaign(campaignId: string) {
             recipient.phone,
             messageText,
             campaign.template!.mediaUrl!,
-            campaign.template!.type
+            campaign.template!.type,
+            deviceId
           );
         } else {
-          success = await sendWhatsappMessage(campaign.sessionId, recipient.phone, messageText);
+          success = await sendWhatsappMessage(
+            campaign.sessionId,
+            recipient.phone,
+            messageText,
+            deviceId
+          );
         }
       } catch (sendErr: any) {
         console.error(`Error sending to ${recipient.phone}:`, sendErr);
@@ -240,7 +253,7 @@ export async function processCampaign(campaignId: string) {
         failCount++;
         await prisma.whatsappCampaignRecipient.update({
           where: { id: recipient.id },
-          data: { status: "FAILED", error: "Gateway rejected message. Check session connection state." }
+          data: { status: "FAILED", error: "GOWA Gateway rejected message. Check session connection state." }
         });
       }
 
@@ -254,9 +267,19 @@ export async function processCampaign(campaignId: string) {
 
       console.log(`✉️ Delivered to ${recipient.phone}: ${success ? "✅ SUCCESS" : "❌ FAILED"}. Progress: ${successCount + failCount}/${campaign.recipients.length}`);
 
-      // 5. Anti-Ban Delay: Sleep for a random interval between 2,000ms and 5,000ms (2 to 5 seconds)
-      const delay = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // 5. Configurable Delay & Batch Pause Interval
+      processedInCurrentBatch++;
+      if (i < campaign.recipients.length - 1) {
+        const isBatchBoundary = batchSize > 0 && processedInCurrentBatch >= batchSize;
+        if (isBatchBoundary) {
+          console.log(`⏸️ [Batch Interval Pause] Reached batch size limit (${batchSize} msgs). Pausing ${batchDelaySeconds}s before next batch...`);
+          processedInCurrentBatch = 0;
+          await new Promise(resolve => setTimeout(resolve, Math.max(1, batchDelaySeconds) * 1000));
+        } else if (delaySeconds > 0) {
+          console.log(`⏳ Delaying ${delaySeconds}s before sending to next recipient...`);
+          await new Promise(resolve => setTimeout(resolve, Math.max(1, delaySeconds) * 1000));
+        }
+      }
     }
 
     // 6. Complete campaign in DB

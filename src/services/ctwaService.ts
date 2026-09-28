@@ -1826,7 +1826,7 @@ export const ctwaBackendService = {
       hour12: true,
     });
 
-    const wellnessDeviceId = payload.deviceId || rawPayload.deviceId || rawPayload.device_id || process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'adil';
+    const wellnessDeviceId = payload.deviceId || rawPayload.deviceId || rawPayload.device_id || process.env.GOWA_WELLNESS_DEVICE_ID || process.env.GOWA_DEVICE_ID || 'WellnessLab';
 
     try {
       const log = await prisma.wellnessLabMessageLog.create({
@@ -1915,11 +1915,13 @@ export const ctwaBackendService = {
       } else if (filters?.filterType === 'yesterday') {
         const now = new Date();
         const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-        const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, -1);
+        const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999);
         where.createdAt = { gte: startOfYesterday, lte: endOfYesterday };
       } else if (filters?.filterType === 'week') {
         const now = new Date();
-        const startOfWeek = new Date(now.setDate(now.getDate() - 7));
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
         where.createdAt = { gte: startOfWeek };
       } else if (filters?.filterType === 'month') {
         const now = new Date();
@@ -2099,10 +2101,10 @@ export const ctwaBackendService = {
   },
 
   sendWellnessBulkMessages: async (data: { phoneNumbers: string[]; message: string; mediaUrl?: string; mediaType?: string; delaySeconds?: number }) => {
-    const { phoneNumbers, message, mediaUrl, mediaType, delaySeconds = 65 } = data;
+    const { phoneNumbers, message, mediaUrl, mediaType, delaySeconds = 5 } = data;
     const results: any[] = [];
     const cfg = await ctwaBackendService.getGOWAConfig();
-    const wellnessDeviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'adil';
+    const wellnessDeviceId = process.env.GOWA_WELLNESS_DEVICE_ID || process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || 'WellnessLab';
 
     for (let i = 0; i < phoneNumbers.length; i++) {
       const phone = phoneNumbers[i];
@@ -2126,39 +2128,16 @@ export const ctwaBackendService = {
 
           if (isLink) {
             endpoint = `${cfg.gowaApiUrl}/send/link`;
-            reqBody = {
-              phone: fullJid,
-              link: mediaUrl,
-              caption: message || '',
-            };
+            reqBody = { phone: fullJid, link: mediaUrl, caption: message || '' };
           } else if (isVideo) {
             endpoint = `${cfg.gowaApiUrl}/send/video`;
-            reqBody = {
-              phone: fullJid,
-              caption: message || '',
-              video_url: mediaUrl,
-              view_once: false,
-              compress: true,
-              is_forwarded: false,
-            };
+            reqBody = { phone: fullJid, caption: message || '', video_url: mediaUrl, view_once: false, compress: true, is_forwarded: false };
           } else if (isDoc) {
             endpoint = `${cfg.gowaApiUrl}/send/file`;
-            reqBody = {
-              phone: fullJid,
-              caption: message || '',
-              file_url: mediaUrl,
-              is_forwarded: false,
-            };
+            reqBody = { phone: fullJid, caption: message || '', file_url: mediaUrl, is_forwarded: false };
           } else {
             endpoint = `${cfg.gowaApiUrl}/send/image`;
-            reqBody = {
-              phone: fullJid,
-              caption: message || '',
-              image_url: mediaUrl,
-              view_once: false,
-              compress: true,
-              is_forwarded: false,
-            };
+            reqBody = { phone: fullJid, caption: message || '', image_url: mediaUrl, view_once: false, compress: true, is_forwarded: false };
           }
         }
 
@@ -2201,6 +2180,7 @@ export const ctwaBackendService = {
           second: '2-digit',
           hour12: true,
         });
+
         const savedLog = await prisma.wellnessLabMessageLog.create({
           data: {
             timestamp: timeStr,
@@ -2215,7 +2195,7 @@ export const ctwaBackendService = {
           },
         });
 
-        results.push({ phone: formattedPhone, success: true, data: resp.data, logId: savedLog.id });
+        results.push({ phone: formattedPhone, success: true, logId: savedLog.id, response: resp.data });
       } catch (err: any) {
         console.error(`❌ [WellnessLab Bulk Send Error for ${formattedPhone}]:`, err.message);
         const timeStr = new Date().toLocaleTimeString('en-US', {
@@ -2239,8 +2219,8 @@ export const ctwaBackendService = {
               deviceId: wellnessDeviceId,
             },
           });
-          results.push({ phone: formattedPhone, success: false, error: err.message, logId: savedLog.id });
-        } catch {
+          results.push({ phone: formattedPhone, success: false, logId: savedLog.id, error: err.message });
+        } catch (e: any) {
           results.push({ phone: formattedPhone, success: false, error: err.message });
         }
       }
@@ -2253,9 +2233,9 @@ export const ctwaBackendService = {
 
     return {
       total: phoneNumbers.length,
-      successful: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
-      results,
+      successCount: results.filter((r) => r.success).length,
+      failCount: results.filter((r) => !r.success).length,
+      details: results,
     };
   },
 
@@ -2322,7 +2302,7 @@ export const ctwaBackendService = {
       }
       const fullJid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
       const cfg = await ctwaBackendService.getGOWAConfig();
-      const wellnessDeviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'Wellnesslab';
+      const wellnessDeviceId = process.env.GOWA_WELLNESS_DEVICE_ID || process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || 'WellnessLab';
 
       const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
       const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
@@ -2431,7 +2411,7 @@ export const ctwaBackendService = {
   syncWellnessAllChats: async () => {
     try {
       const cfg = await ctwaBackendService.getGOWAConfig();
-      const wellnessDeviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'Wellnesslab';
+      const wellnessDeviceId = process.env.GOWA_WELLNESS_DEVICE_ID || process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || 'WellnessLab';
 
       const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
       const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
@@ -2483,4 +2463,5 @@ export const ctwaBackendService = {
     }
   },
 };
+
 
