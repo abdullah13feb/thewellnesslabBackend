@@ -218,10 +218,10 @@ export async function processCampaign(campaignId: string) {
       }
 
       // 3. Dispatch the message via GOWA API
-      let success = false;
+      let sendResult: { success: boolean; error?: string } = { success: false };
       try {
         if (hasMedia) {
-          success = await sendWhatsappMediaMessage(
+          sendResult = await sendWhatsappMediaMessage(
             campaign.sessionId,
             recipient.phone,
             messageText,
@@ -230,7 +230,7 @@ export async function processCampaign(campaignId: string) {
             deviceId
           );
         } else {
-          success = await sendWhatsappMessage(
+          sendResult = await sendWhatsappMessage(
             campaign.sessionId,
             recipient.phone,
             messageText,
@@ -239,11 +239,11 @@ export async function processCampaign(campaignId: string) {
         }
       } catch (sendErr: any) {
         console.error(`Error sending to ${recipient.phone}:`, sendErr);
-        success = false;
+        sendResult = { success: false, error: sendErr.message };
       }
 
       // 4. Update Recipient and Campaign status live in the DB
-      if (success) {
+      if (sendResult.success) {
         successCount++;
         await prisma.whatsappCampaignRecipient.update({
           where: { id: recipient.id },
@@ -253,7 +253,7 @@ export async function processCampaign(campaignId: string) {
         failCount++;
         await prisma.whatsappCampaignRecipient.update({
           where: { id: recipient.id },
-          data: { status: "FAILED", error: "GOWA Gateway rejected message. Check session connection state." }
+          data: { status: "FAILED", error: sendResult.error || "GOWA Gateway rejected message. Check session connection state." }
         });
       }
 
@@ -265,7 +265,7 @@ export async function processCampaign(campaignId: string) {
         }
       });
 
-      console.log(`✉️ Delivered to ${recipient.phone}: ${success ? "✅ SUCCESS" : "❌ FAILED"}. Progress: ${successCount + failCount}/${campaign.recipients.length}`);
+      console.log(`✉️ Delivered to ${recipient.phone}: ${sendResult.success ? "✅ SUCCESS" : "❌ FAILED"}. Progress: ${successCount + failCount}/${campaign.recipients.length}`);
 
       // 5. Configurable Delay & Batch Pause Interval
       processedInCurrentBatch++;

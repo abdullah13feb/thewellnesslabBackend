@@ -78,7 +78,7 @@ export async function sendWhatsappMessage(
   toPhone: string,
   text: string,
   deviceId?: string
-): Promise<boolean> {
+): Promise<{ success: boolean; error?: string }> {
   const targetDevice = deviceId || GOWA_DEFAULT_DEVICE;
   const rawPhone = toPhone.replace(/\D/g, "");
   let formattedPhone = rawPhone;
@@ -88,6 +88,7 @@ export async function sendWhatsappMessage(
 
   // 1. Primary: Send via GOWA EC2 Engine
   const gowaUrl = `${GOWA_API_URL}/send/message`;
+  let gowaErrDetail = "";
   try {
     console.log(`[GOWA EC2] Dispatching text to ${fullJid} via Device: ${targetDevice}`);
     const res = await fetch(gowaUrl, {
@@ -102,12 +103,14 @@ export async function sendWhatsappMessage(
     if (res.ok) {
       const data = await res.json();
       console.log(`✅ [GOWA EC2 Success] Text delivered to ${fullJid}`);
-      return true;
+      return { success: true };
     }
     const errBody = await res.text();
     console.warn(`⚠️ [GOWA EC2 ${res.status}] ${errBody}`);
+    gowaErrDetail = `GOWA (Device: ${targetDevice}, Status ${res.status}): ${errBody || 'Gateway rejected request'}`;
   } catch (gowaErr: any) {
     console.error(`❌ [GOWA EC2 Fetch Error]:`, gowaErr.message);
+    gowaErrDetail = `GOWA Connection Error (${gowaUrl}): ${gowaErr.message}`;
   }
 
   // 2. Fallback: OpenWA Server
@@ -126,12 +129,13 @@ export async function sendWhatsappMessage(
     });
 
     if (response.ok) {
-      return true;
+      return { success: true };
     }
-    return false;
-  } catch (error) {
+    const openwaErr = await response.text();
+    return { success: false, error: gowaErrDetail || `OpenWA HTTP ${response.status}: ${openwaErr}` };
+  } catch (error: any) {
     console.error("Error in sendWhatsappMessage fallback:", error);
-    return false;
+    return { success: false, error: gowaErrDetail || `Gateway error: ${error.message}` };
   }
 }
 
@@ -283,7 +287,7 @@ export async function sendWhatsappMediaMessage(
   mediaUrl: string,
   mediaType: string,
   deviceId?: string
-): Promise<boolean> {
+): Promise<{ success: boolean; error?: string }> {
   const targetDevice = deviceId || GOWA_DEFAULT_DEVICE;
   const rawPhone = toPhone.replace(/\D/g, "");
   let formattedPhone = rawPhone;
@@ -318,6 +322,7 @@ export async function sendWhatsappMediaMessage(
     reqBody = { phone: fullJid, caption: text || "", file_url: mediaUrl, is_forwarded: false };
   }
 
+  let gowaErrDetail = "";
   try {
     console.log(`[GOWA EC2] Sending ${mediaType} to ${fullJid} via ${endpoint}`);
     const res = await fetch(endpoint, {
@@ -328,10 +333,14 @@ export async function sendWhatsappMediaMessage(
 
     if (res.ok) {
       console.log(`✅ [GOWA EC2 Success] ${mediaType} sent to ${fullJid}`);
-      return true;
+      return { success: true };
     }
+    const errBody = await res.text();
+    console.warn(`⚠️ [GOWA EC2 ${res.status}] ${errBody}`);
+    gowaErrDetail = `GOWA Media (${mediaType}, Device: ${targetDevice}, Status ${res.status}): ${errBody || 'Gateway rejected request'}`;
   } catch (err: any) {
     console.error(`❌ [GOWA EC2 Media Send Error]:`, err.message);
+    gowaErrDetail = `GOWA Connection Error (${endpoint}): ${err.message}`;
   }
 
   // OpenWA Fallback
@@ -363,10 +372,14 @@ export async function sendWhatsappMediaMessage(
       headers: getHeaders(),
       body: JSON.stringify(bodyData),
     });
-    return response.ok;
-  } catch (error) {
+    if (response.ok) {
+      return { success: true };
+    }
+    const openwaErr = await response.text();
+    return { success: false, error: gowaErrDetail || `OpenWA HTTP ${response.status}: ${openwaErr}` };
+  } catch (error: any) {
     console.error("Error in sendWhatsappMediaMessage fallback:", error);
-    return false;
+    return { success: false, error: gowaErrDetail || `Gateway error: ${error.message}` };
   }
 }
 

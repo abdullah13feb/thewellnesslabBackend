@@ -1642,7 +1642,6 @@ export const ctwaBackendService = {
           contactName = msg.sender_display_name;
         }
 
-        // Check if message already exists in DB to avoid duplicate
         const minTime = new Date(msgCreatedAt.getTime() - 120000);
         const maxTime = new Date(msgCreatedAt.getTime() + 120000);
 
@@ -1674,7 +1673,6 @@ export const ctwaBackendService = {
         }
       }
 
-      // Upsert contact in DB
       await prisma.urbanSaunaContact.upsert({
         where: { phoneNumber: cleanPhone },
         update: {
@@ -1735,7 +1733,6 @@ export const ctwaBackendService = {
         }
       }
 
-      // Cleanup misattributed logs under 971559206585
       try {
         const deleted = await prisma.urbanSaunaMessageLog.deleteMany({
           where: { phoneNumber: '971559206585' },
@@ -1844,7 +1841,6 @@ export const ctwaBackendService = {
       });
       console.log(`✅ [WellnessLab DB Log] ${direction} message logged for ${phoneNumber}`);
 
-      // Upsert contact in DB
       try {
         await prisma.wellnessLabContact.upsert({
           where: { phoneNumber },
@@ -2302,7 +2298,7 @@ export const ctwaBackendService = {
       }
       const fullJid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
       const cfg = await ctwaBackendService.getGOWAConfig();
-      const wellnessDeviceId = process.env.GOWA_WELLNESS_DEVICE_ID || process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || 'WellnessLab';
+      const wellnessDeviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'Wellnesslab';
 
       const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
       const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
@@ -2411,7 +2407,7 @@ export const ctwaBackendService = {
   syncWellnessAllChats: async () => {
     try {
       const cfg = await ctwaBackendService.getGOWAConfig();
-      const wellnessDeviceId = process.env.GOWA_WELLNESS_DEVICE_ID || process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || 'WellnessLab';
+      const wellnessDeviceId = process.env.GOWA_DEVICE_ID || process.env.GOWA_SESSION_ID || process.env.SESSION_ID || 'Wellnesslab';
 
       const authUser = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || 'user1';
       const authPass = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || 'pass1';
