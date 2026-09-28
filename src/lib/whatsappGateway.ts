@@ -9,7 +9,15 @@ const OPENWA_SESSION_ID = process.env.OPENWA_SESSION_ID || "default";
 const GOWA_API_URL = process.env.CTWA_GOWA_API_URL || "http://3.110.175.249:3000";
 const GOWA_BASIC_USER = process.env.GOWA_BASIC_USER || process.env.GOWA_USERNAME || "user1";
 const GOWA_BASIC_PASS = process.env.GOWA_BASIC_PASS || process.env.GOWA_PASSWORD || "pass1";
-const GOWA_DEFAULT_DEVICE = process.env.GOWA_WELLNESS_DEVICE_ID || process.env.GOWA_DEVICE_ID || "WellnessLab";
+const GOWA_DEFAULT_DEVICE = process.env.GOWA_WELLNESS_DEVICE_ID || process.env.GOWA_DEVICE_ID || "Wellnesslab";
+
+export function normalizeDeviceId(deviceId?: string): string {
+  if (!deviceId) return GOWA_DEFAULT_DEVICE;
+  const lower = deviceId.trim().toLowerCase();
+  if (lower === "wellnesslab") return "Wellnesslab";
+  if (lower === "urbansauna") return "UrbanSauna";
+  return deviceId.trim();
+}
 
 function getFinalSessionId(sessionId: string): string {
   return !sessionId || sessionId === "default" ? OPENWA_SESSION_ID : sessionId;
@@ -27,9 +35,10 @@ function getHeaders(): Record<string, string> {
 }
 
 function getGOWAHeaders(deviceId?: string): Record<string, string> {
+  const targetDevice = normalizeDeviceId(deviceId);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Device-Id": deviceId || GOWA_DEFAULT_DEVICE,
+    "X-Device-Id": targetDevice,
   };
   if (GOWA_BASIC_USER && GOWA_BASIC_PASS) {
     const basicToken = Buffer.from(`${GOWA_BASIC_USER}:${GOWA_BASIC_PASS}`).toString("base64");
@@ -79,7 +88,7 @@ export async function sendWhatsappMessage(
   text: string,
   deviceId?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const targetDevice = deviceId || GOWA_DEFAULT_DEVICE;
+  const targetDevice = normalizeDeviceId(deviceId);
   const rawPhone = toPhone.replace(/\D/g, "");
   let formattedPhone = rawPhone;
   if (formattedPhone.startsWith("0")) formattedPhone = formattedPhone.substring(1);
@@ -288,7 +297,7 @@ export async function sendWhatsappMediaMessage(
   mediaType: string,
   deviceId?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const targetDevice = deviceId || GOWA_DEFAULT_DEVICE;
+  const targetDevice = normalizeDeviceId(deviceId);
   const rawPhone = toPhone.replace(/\D/g, "");
   let formattedPhone = rawPhone;
   if (formattedPhone.startsWith("0")) formattedPhone = formattedPhone.substring(1);
