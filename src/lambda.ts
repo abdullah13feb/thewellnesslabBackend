@@ -110,6 +110,7 @@ app.get("/health", (req, res) => {
   res.json({ status: "AWS Lambda Express API is running", timestamp: new Date().toISOString() });
 });
 
+
 // Global error handler
 app.use((err: any, req: any, res: any, next: any) => {
   console.error("Global Lambda Error:", err);
@@ -122,5 +123,5 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 // Export Lambda handler wrapped with serverless-http
 export const handler = serverless(app, {
-  binary: ["multipart/form-data", "image/*", "video/*", "application/pdf", "*/*"]
+  binary: ["image/*", "video/*", "application/pdf", "multipart/form-data"]
 });

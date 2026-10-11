@@ -1,0 +1,32 @@
+{
+  "started_at": "2026-10-10T15:34:59.964Z",
+  "completed_at": "2026-10-10T15:37:51.709Z",
+  "duration_seconds": "171.7",
+  "bucket_name": "thewellnesslab-public-assets",
+  "aws_region": "ap-south-1",
+  "total_assets": 355,
+  "download_stats": {
+    "downloaded": 53,
+    "already_downloaded": 302,
+    "failed": 0
+  },
+  "upload_stats": {
+    "uploaded": 53,
+    "already_on_s3": 302,
+    "failed": 0
+  },
+  "sample_mapping": [
+    {
+      "cloudinary_url": "https://res.cloudinary.com/dyowanmgo/image/upload/v1791537850/radiant-aura/commh6gxle2bzzrrybob.jpg",
+      "s3_url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/commh6gxle2bzzrrybob.jpg"
+    },
+    {
+      "cloudinary_url": "https://res.cloudinary.com/dyowanmgo/image/upload/v1790162803/radiant-aura/WhatsApp-Image-2026-09-23-at-3-23-01-PM-1790162802281-2vtj1k.jpg",
+      "s3_url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/WhatsApp-Image-2026-09-23-at-3-23-01-PM-1790162802281-2vtj1k.jpg"
+    },
+    {
+      "cloudinary_url": "https://res.cloudinary.com/dyowanmgo/image/upload/v1788723634/radiant-aura/iCONNA-logo-extracted-1788723633469-hgq49t.png",
+      "s3_url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/iCONNA-logo-extracted-1788723633469-hgq49t.png"
+    }
+  ]
+}

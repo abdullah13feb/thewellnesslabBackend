@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
-import { upload } from "./upload.js";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { upload, s3 } from "./upload.js";
 import { requireAuth } from "../middleware/auth.js";
-import { v2 as cloudinary } from "cloudinary";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -35,7 +35,7 @@ router.get("/", async (req, res) => {
     }
 });
 
-// Create/Upload a new media asset
+// Create/Upload a new media asset to AWS S3
 router.post("/", requireAuth, upload.single("file"), async (req, res) => {
     try {
         const { name, type } = req.body;
@@ -69,7 +69,7 @@ router.post("/", requireAuth, upload.single("file"), async (req, res) => {
     }
 });
 
-// Delete a media asset
+// Delete a media asset from AWS S3 & Database
 router.delete("/:id", requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
@@ -79,27 +79,33 @@ router.delete("/:id", requireAuth, async (req, res) => {
             return res.status(404).json({ error: "Media asset not found" });
         }
 
-        // Attempt to delete the file from Cloudinary (extract public_id from URL)
+        // Attempt to delete the file from AWS S3
         try {
-            const urlParts = media.url.split("/");
-            const uploadIndex = urlParts.findIndex((part) => part === "upload");
-            if (uploadIndex !== -1 && urlParts.length > uploadIndex + 2) {
-                // E.g. radiant-aura/file-name-timestamp-token
-                const publicIdWithExt = urlParts.slice(uploadIndex + 2).join("/");
-                const publicId = publicIdWithExt.substring(0, publicIdWithExt.lastIndexOf("."));
-                
-                // Configure resource type for Cloudinary destroy ('raw' for docs, 'video' for video, default is 'image')
-                let destroyType = "image";
-                if (media.type === "DOCUMENT") {
-                    destroyType = "raw";
-                } else if (media.type === "VIDEO") {
-                    destroyType = "video";
-                }
+            const bucket = process.env.AWS_S3_BUCKET || process.env.S3_BUCKET_NAME || "thewellnesslab-public-assets";
+            let s3Key: string | null = null;
 
-                await cloudinary.uploader.destroy(publicId, { resource_type: destroyType });
+            if (media.url.includes("amazonaws.com/")) {
+                const parts = media.url.split("amazonaws.com/");
+                if (parts[1]) {
+                    s3Key = decodeURIComponent(parts[1]);
+                }
+            } else if (media.url.includes("cloudinary.com")) {
+                // If legacy Cloudinary URL exists, extract key
+                const urlParts = media.url.split("/");
+                const uploadIndex = urlParts.findIndex((part) => part === "upload");
+                if (uploadIndex !== -1 && urlParts.length > uploadIndex + 2) {
+                    s3Key = urlParts.slice(uploadIndex + 2).join("/");
+                }
             }
-        } catch (cloudinaryError) {
-            console.error("Failed to delete asset from Cloudinary:", cloudinaryError);
+
+            if (s3Key) {
+                await s3.send(new DeleteObjectCommand({
+                    Bucket: bucket,
+                    Key: s3Key
+                }));
+            }
+        } catch (s3Error) {
+            console.error("Failed to delete asset from AWS S3:", s3Error);
         }
 
         await prisma.mediaAsset.delete({ where: { id } });

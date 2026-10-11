@@ -10,3 +10,7 @@ dist/
 .serverless/
 .esbuild/
 *.zip
+
+# Local DB Backups & Data exports
+backups/
+urban_sauna_*.json

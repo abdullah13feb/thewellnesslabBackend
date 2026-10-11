@@ -1,0 +1,404 @@
+{
+  "products": [
+    {
+      "id": "cmqpd3sxy0003i5y8n2lgvgql",
+      "name": "Rex Pro",
+      "slug": "rex-pro",
+      "replacements": [
+        {
+          "field": "image",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810073/radiant-aura/REX-PRO-HERO-IMAGE-1782810071508-qbqv98.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRO-HERO-IMAGE-1782810071508-qbqv98.png"
+        },
+        {
+          "field": "images[0]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810088/radiant-aura/REX-PRO-GALLERY-IMAEG-1-1782810086752-91oi7e.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRO-GALLERY-IMAEG-1-1782810086752-91oi7e.png"
+        },
+        {
+          "field": "images[1]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810090/radiant-aura/REX-PRO-GALLERY-IMAGE-2-1782810088234-kv2hhu.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRO-GALLERY-IMAGE-2-1782810088234-kv2hhu.png"
+        },
+        {
+          "field": "images[2]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810091/radiant-aura/REX-PRO-GALLERY-IMAGE-3-1782810089719-oep1hj.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRO-GALLERY-IMAGE-3-1782810089719-oep1hj.png"
+        },
+        {
+          "field": "images[3]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810093/radiant-aura/REX-PRO-GALLERY-IMAGE-4-1782810091200-8xlfi8.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRO-GALLERY-IMAGE-4-1782810091200-8xlfi8.png"
+        }
+      ]
+    },
+    {
+      "id": "cmqpd3sq50002i5y8fdy6lg6w",
+      "name": "Rex Core",
+      "slug": "rex-core",
+      "replacements": [
+        {
+          "field": "image",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809940/radiant-aura/RexCore-hero-Image-1782809939303-bb8ytf.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/RexCore-hero-Image-1782809939303-bb8ytf.jpg"
+        },
+        {
+          "field": "images[0]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809971/radiant-aura/REX-CORE-GALLERY-IMAGE-1-1782809969932-jiiwcn.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-CORE-GALLERY-IMAGE-1-1782809969932-jiiwcn.jpg"
+        },
+        {
+          "field": "images[1]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809971/radiant-aura/REX-CORE-GALLERY-IMAGE-3-1782809970676-188vav.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-CORE-GALLERY-IMAGE-3-1782809970676-188vav.jpg"
+        },
+        {
+          "field": "images[2]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809972/radiant-aura/REX-CORE-GALLERY-IMAGE-4-1782809970860-xqgf23.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-CORE-GALLERY-IMAGE-4-1782809970860-xqgf23.png"
+        },
+        {
+          "field": "images[3]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809973/radiant-aura/REX-CORE-GALLERY-IMAGE-5-1782809972338-lf75vm.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-CORE-GALLERY-IMAGE-5-1782809972338-lf75vm.jpg"
+        },
+        {
+          "field": "images[4]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809974/radiant-aura/RexCore-Gallery-Image-2-1782809973148-28d5kl.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/RexCore-Gallery-Image-2-1782809973148-28d5kl.png"
+        }
+      ]
+    },
+    {
+      "id": "cmls47grd000010jzhovux1hc",
+      "name": "Rex Prestige",
+      "slug": "rex-prestige",
+      "replacements": [
+        {
+          "field": "image",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810013/radiant-aura/REX-PRESTIGE-HERO-IMAGE-1782810012065-i7a2og.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRESTIGE-HERO-IMAGE-1782810012065-i7a2og.png"
+        },
+        {
+          "field": "images[0]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810025/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-1-1782810023686-xgytlq.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-1-1782810023686-xgytlq.png"
+        },
+        {
+          "field": "images[1]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810026/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-2-1782810025168-q9ssg0.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-2-1782810025168-q9ssg0.jpg"
+        },
+        {
+          "field": "images[2]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810044/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-3-1782810043173-5ws8po.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-3-1782810043173-5ws8po.jpg"
+        },
+        {
+          "field": "images[3]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810044/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-3-1782810043175-qrqots.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-3-1782810043175-qrqots.png"
+        },
+        {
+          "field": "images[4]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810044/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-4-1782810043917-oybj1j.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-4-1782810043917-oybj1j.jpg"
+        }
+      ]
+    },
+    {
+      "id": "cmqpd3sik0001i5y8vnr5kxi9",
+      "name": "Rex Ultra",
+      "slug": "rex-ultra",
+      "replacements": [
+        {
+          "field": "image",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809848/radiant-aura/REX-ULTRA-HERO-IMAGE-1782809846364-jehnkm.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-ULTRA-HERO-IMAGE-1782809846364-jehnkm.png"
+        },
+        {
+          "field": "images[0]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809869/radiant-aura/REX-ULTRA-GALLERY-IMAGE-1-1782809868109-odnfyv.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-ULTRA-GALLERY-IMAGE-1-1782809868109-odnfyv.png"
+        },
+        {
+          "field": "images[1]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809893/radiant-aura/REX-UTRA-GALLERY-IAMGE-2-1782809891995-m2erfk.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-UTRA-GALLERY-IAMGE-2-1782809891995-m2erfk.png"
+        },
+        {
+          "field": "images[2]",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809899/radiant-aura/REX-ULTRA-GALLERY-IMAGE-3-1782809898476-8kl6ne.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-ULTRA-GALLERY-IMAGE-3-1782809898476-8kl6ne.jpg"
+        }
+      ]
+    }
+  ],
+  "blogs": [
+    {
+      "id": "cmlz8ec72004a8b2u6lu8whmc",
+      "title": "Red Light Therapy in Dubai",
+      "slug": "red-light-therapy-in-dubai",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1771854453/radiant-aura/Screenshot-2026-02-23-at-5-47-24-PM-1771854452284.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/Screenshot-2026-02-23-at-5-47-24-PM-1771854452284.png"
+        }
+      ]
+    },
+    {
+      "id": "cmltef8ph00048b2us70u8m3w",
+      "title": "Immune Optimization Through Photobiomodulation",
+      "slug": "immune-optimization-through-photobiomodulation",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1771501766/radiant-aura/Screenshot-2026-02-14-at-12-56-41-PM-1771501764425.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/Screenshot-2026-02-14-at-12-56-41-PM-1771501764425.png"
+        }
+      ]
+    },
+    {
+      "id": "cmltcefro00018b2urpws542z",
+      "title": "Red Light Therapy for Lumbar Relief",
+      "slug": "red-light-therapy-for-lumbar-relief",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1771854367/radiant-aura/Screenshot-2026-02-23-at-5-45-57-PM-1771854366065.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/Screenshot-2026-02-23-at-5-45-57-PM-1771854366065.png"
+        }
+      ]
+    },
+    {
+      "id": "cmswuqqx10001vj3yp6kaefpe",
+      "title": "Dubai wellness trends 2026",
+      "slug": "dubai-wellness-trends-run-clubs-recovery-rex-ultra",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1786953935/radiant-aura/Wstyle-Ad-1786953933661-ki5i0u.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/Wstyle-Ad-1786953933661-ki5i0u.png"
+        },
+        {
+          "field": "content",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809869/radiant-aura/REX-ULTRA-GALLERY-IMAGE-1-1782809868109-odnfyv.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-ULTRA-GALLERY-IMAGE-1-1782809868109-odnfyv.png"
+        }
+      ]
+    },
+    {
+      "id": "cmpb4v5kl00251bppnpnsry1w",
+      "title": "What Is Red Light Therapy? The Complete Science Guide",
+      "slug": "what-is-red-light-therapy-complete-science-guide",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1780933177/radiant-aura/WhatsApp-Image-2026-06-08-at-9-01-39-PM-1780933176159-8o8w35.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/WhatsApp-Image-2026-06-08-at-9-01-39-PM-1780933176159-8o8w35.jpg"
+        }
+      ]
+    },
+    {
+      "id": "cmsbobvgg0001dpq7k9v8nxhk",
+      "title": "Red Light Therapy for Neck Pain",
+      "slug": "red-light-therapy-neck-pain-padel-recovery",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1785667532/radiant-aura/Jun-25-2026-08-11-51-PM-1785667530452-d0rbrt.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/Jun-25-2026-08-11-51-PM-1785667530452-d0rbrt.png"
+        }
+      ]
+    },
+    {
+      "id": "cms8wv7uz00006vn2ywmljlqh",
+      "title": "Best Red Light Therapy Panel in UAE: Compare Every REX Model",
+      "slug": "best-red-light-therapy-panel-uae",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1785500446/radiant-aura/ChatGPT-Image-Jul-31-2026-04-20-24-PM-1785500444295-bezge9.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/ChatGPT-Image-Jul-31-2026-04-20-24-PM-1785500444295-bezge9.png"
+        },
+        {
+          "field": "content",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809869/radiant-aura/REX-ULTRA-GALLERY-IMAGE-1-1782809868109-odnfyv.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-ULTRA-GALLERY-IMAGE-1-1782809868109-odnfyv.png"
+        },
+        {
+          "field": "content",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810093/radiant-aura/REX-PRO-GALLERY-IMAGE-4-1782810091200-8xlfi8.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRO-GALLERY-IMAGE-4-1782810091200-8xlfi8.png"
+        },
+        {
+          "field": "content",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782809974/radiant-aura/RexCore-Gallery-Image-2-1782809973148-28d5kl.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/RexCore-Gallery-Image-2-1782809973148-28d5kl.png"
+        },
+        {
+          "field": "content",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782810025/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-1-1782810023686-xgytlq.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-1-1782810023686-xgytlq.png"
+        }
+      ]
+    },
+    {
+      "id": "cms391xx80000z342p8t3rrhl",
+      "title": "Red Light Masks Look Powerful. But Are They Delivering Enough Light?",
+      "slug": "red-light-therapy-masks-vs-panels",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1785765168/radiant-aura/Red-Light-Masks-Look-Powerful-But-Are-They-Deliver-1785765166236-f206nh.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/Red-Light-Masks-Look-Powerful-But-Are-They-Deliver-1785765166236-f206nh.png"
+        },
+        {
+          "field": "content",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/c_pad,b_rgb:F5F2F0,w_900,h_1100,q_auto:good,fl_progressive/v1782972855/radiant-aura/rex-core-1782972854563-2nl9bl.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/rex-core-1782972854563-2nl9bl.jpg"
+        }
+      ]
+    },
+    {
+      "id": "cmt6pe2dq0000fcjoz1f1up6z",
+      "title": "Red Light Therapy for Post Workout Recovery: A Smarter Recovery Routine",
+      "slug": "red-light-therapy-post-workout-recovery-routine",
+      "replacements": [
+        {
+          "field": "image (featured)",
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1787543736/radiant-aura/krozfa1gww7xxupwjs7g.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/krozfa1gww7xxupwjs7g.png"
+        }
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "id": "cmoplbfhp0000dumvw4w6nnxl",
+      "key": "hero_media",
+      "replacements": [
+        {
+          "index": 0,
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1777801576/radiant-aura/ChatGPT-Image-May-3-2026-02-19-03-PM-1777801575160-9mrpvu.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/ChatGPT-Image-May-3-2026-02-19-03-PM-1777801575160-9mrpvu.png"
+        },
+        {
+          "index": 1,
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1777801580/radiant-aura/ChatGPT-Image-May-3-2026-02-31-04-PM-1777801578071-ff4kso.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/ChatGPT-Image-May-3-2026-02-31-04-PM-1777801578071-ff4kso.png"
+        },
+        {
+          "index": 2,
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1777801585/radiant-aura/ChatGPT-Image-May-3-2026-02-51-32-PM-1777801585985-2qdid5.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/ChatGPT-Image-May-3-2026-02-51-32-PM-1777801585985-2qdid5.png"
+        },
+        {
+          "index": 3,
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1777801585/radiant-aura/ChatGPT-Image-May-3-2026-02-53-25-PM-1777801586189-j9g4sh.png",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/ChatGPT-Image-May-3-2026-02-53-25-PM-1777801586189-j9g4sh.png"
+        },
+        {
+          "index": 4,
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1778061797/radiant-aura/image-1778061795799-acgppo.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/image-1778061795799-acgppo.jpg"
+        },
+        {
+          "index": 5,
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1791537850/radiant-aura/commh6gxle2bzzrrybob.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/commh6gxle2bzzrrybob.jpg"
+        }
+      ]
+    },
+    {
+      "id": "cmoo19rr20000itcn4l1lwcrl",
+      "key": "flash_sale_popup",
+      "replacements": [
+        {
+          "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1777709350/radiant-aura/2-1777709349366.jpg",
+          "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/2-1777709349366.jpg"
+        }
+      ]
+    }
+  ],
+  "mediaAssets": [
+    {
+      "id": "cmr3404pb0000kbanxwlobdtr",
+      "name": "rex-core",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782972855/radiant-aura/rex-core-1782972854563-2nl9bl.jpg",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/rex-core-1782972854563-2nl9bl.jpg"
+    },
+    {
+      "id": "cmr3404qa0001kbangyxjzkz9",
+      "name": "rex-ultra",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782972855/radiant-aura/rex-ultra-1782972854700-59qviv.jpg",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/rex-ultra-1782972854700-59qviv.jpg"
+    },
+    {
+      "id": "cmr3404ty0002kbanp7drmwvi",
+      "name": "recovery",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782972855/radiant-aura/recovery-1782972854762-hil12f.jpg",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/recovery-1782972854762-hil12f.jpg"
+    },
+    {
+      "id": "cmr3404vp0003kbanypggff1t",
+      "name": "wavelengths",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782972855/radiant-aura/wavelengths-1782972854738-ry8q8p.jpg",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/wavelengths-1782972854738-ry8q8p.jpg"
+    },
+    {
+      "id": "cmr3405mo0004kbangwb9f7i2",
+      "name": "hero-glow",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782972856/radiant-aura/hero-glow-1782972855149-mg70sh.jpg",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/hero-glow-1782972855149-mg70sh.jpg"
+    },
+    {
+      "id": "cmr3j8afo00007wjuas777ja1",
+      "name": "Screenshot 2026-07-02 at 4.47.51â¯PM",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782998430/radiant-aura/Screenshot-2026-07-02-at-4-47-51-PM-1782998428847-daf0wc.png",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/Screenshot-2026-07-02-at-4-47-51-PM-1782998428847-daf0wc.png"
+    },
+    {
+      "id": "cmr3jcqz40000cuqxn94i9i2e",
+      "name": "REX-PRESTIGE-GALLERY-IMAGE-1-1782810023686-xgytlq",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1782998638/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-1-1782810023686-xgytlq-1782998636394-t75uc7.png",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/REX-PRESTIGE-GALLERY-IMAGE-1-1782810023686-xgytlq-1782998636394-t75uc7.png"
+    },
+    {
+      "id": "cmr7yu91m0000scq68ra6xhu1",
+      "name": "8 reasons",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1783266513/radiant-aura/ChatGPT-Image-Jul-5-2026-05-44-09-AM-1783266511999-2u6iag.png",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/ChatGPT-Image-Jul-5-2026-05-44-09-AM-1783266511999-2u6iag.png"
+    },
+    {
+      "id": "cmtq7klqm0001nv87lovfnx8r",
+      "name": "logo",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1788723136/radiant-aura/WhatsApp-Image-2026-09-07-at-00-56-41-1788723135561-iuk00t.jpg",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/WhatsApp-Image-2026-09-07-at-00-56-41-1788723135561-iuk00t.jpg"
+    },
+    {
+      "id": "cmtq7v9zo000570f7orlli5ip",
+      "name": "iCONNA_logo_extracted",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1788723634/radiant-aura/iCONNA-logo-extracted-1788723633469-hgq49t.png",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/iCONNA-logo-extracted-1788723633469-hgq49t.png"
+    },
+    {
+      "id": "cmue0po6m0000leuxkwrsk233",
+      "name": "FLASHSALE",
+      "type": "IMAGE",
+      "currentCloudinaryUrl": "https://res.cloudinary.com/dyowanmgo/image/upload/v1790162803/radiant-aura/WhatsApp-Image-2026-09-23-at-3-23-01-PM-1790162802281-2vtj1k.jpg",
+      "replacementS3Url": "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/radiant-aura/WhatsApp-Image-2026-09-23-at-3-23-01-PM-1790162802281-2vtj1k.jpg"
+    }
+  ]
+}

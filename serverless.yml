@@ -15,8 +15,20 @@ provider:
     binaryMediaTypes:
       - 'multipart/form-data'
       - 'image/*'
-      - '*/*'
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - 's3:*'
+          Resource:
+            - 'arn:aws:s3:::thewellnesslab-public-assets'
+            - 'arn:aws:s3:::thewellnesslab-public-assets/*'
   environment:
+    AWS_S3_BUCKET: ${env:AWS_S3_BUCKET, 'thewellnesslab-public-assets'}
+    APP_AWS_REGION: ${env:AWS_REGION, 'ap-south-1'}
+    APP_AWS_ACCESS_KEY_ID: ${env:AWS_ACCESS_KEY_ID, '${env:AWS_ACCESS_KEY, ""}'}
+    APP_AWS_SECRET_ACCESS_KEY: ${env:AWS_SECRET_ACCESS_KEY, '${env:AWS_SCERET_KEY, ""}'}
     DATABASE_URL: ${env:DATABASE_URL, ''}
     DIRECT_URL: ${env:DIRECT_URL, ''}
     CLERK_SECRET_KEY: ${env:CLERK_SECRET_KEY, ''}
