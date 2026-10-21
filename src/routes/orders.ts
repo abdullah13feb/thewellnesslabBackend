@@ -3,6 +3,7 @@ import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
+import { firstIp } from "../lib/metaCapi.js";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
@@ -529,6 +530,9 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
 
     const finalTotalPrice = subtotal + shippingCharge - discount;
 
+    const attr = req.body.attribution || {};
+    const clip = (v: unknown, max = 500) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+
     const order = await prisma.order.create({
       data: {
         userId: userId || undefined,
@@ -548,6 +552,16 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
         paymentMethod: paymentMethod || "cod",
         paymentStatus: "pending",
         stripePaymentId: stripePaymentId || null,
+        fbp: clip(attr.fbp),
+        fbc: clip(attr.fbc),
+        fbclid: clip(attr.fbclid),
+        utmSource: clip(attr.utmSource),
+        utmMedium: clip(attr.utmMedium),
+        utmCampaign: clip(attr.utmCampaign),
+        utmContent: clip(attr.utmContent),
+        utmTerm: clip(attr.utmTerm),
+        clientIp: clip(firstIp(req.headers["x-forwarded-for"]) || req.ip || req.socket?.remoteAddress, 64),
+        clientUserAgent: clip(req.headers["user-agent"]),
         items: {
           create: items.map(
             (item: { productId: string; quantity: number; price: number }) => ({

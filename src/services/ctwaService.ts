@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.js';
 import axios from 'axios';
+import { findCtwaClid, saveCtwaClick, sendWonLeadPurchase } from '../lib/metaLeadPurchase.js';
 
 export interface MetaAdCreative {
   id: string;
@@ -260,6 +261,11 @@ export const ctwaBackendService = {
 
     const adId = String(payload.adId || referral.source_id || referral.ref || rawPayload.adId || rawPayload.ad_id || '').trim();
     const creativeName = String(payload.creativeName || referral.ad_title || rawPayload.creativeName || '').trim();
+
+    if (!innerPayload.is_from_me) {
+      const ctwaClid = findCtwaClid(referral) || findCtwaClid(rawPayload);
+      if (ctwaClid) await saveCtwaClick(phoneNumber, ctwaClid, adId);
+    }
 
     // Find Creative Mapping matching adId or source_id or creativeName
     const mappings = await ctwaBackendService.getMappings();
@@ -1841,6 +1847,12 @@ export const ctwaBackendService = {
       });
       console.log(`✅ [WellnessLab DB Log] ${direction} message logged for ${phoneNumber}`);
 
+      if (!isFromMe) {
+        const referral = innerPayload.referral || rawPayload.referral || {};
+        const ctwaClid = findCtwaClid(rawPayload);
+        if (ctwaClid) await saveCtwaClick(phoneNumber, ctwaClid, String(referral.source_id || referral.ref || ''));
+      }
+
       try {
         await prisma.wellnessLabContact.upsert({
           where: { phoneNumber },
@@ -1975,6 +1987,8 @@ export const ctwaBackendService = {
         notes: string;
         email: string;
         city: string;
+        dealValue: number | null;
+        fromAd: boolean;
         lastMessage: string;
         lastTimestamp: string;
         lastCreatedAt: Date;
@@ -1999,6 +2013,8 @@ export const ctwaBackendService = {
             notes: saved?.notes || '',
             email: saved?.email || '',
             city: saved?.city || '',
+            dealValue: saved?.dealValue ?? null,
+            fromAd: Boolean(saved?.ctwaClid),
             lastMessage: log.messageContent,
             lastTimestamp: log.timestamp || new Date(log.createdAt).toLocaleTimeString(),
             lastCreatedAt: log.createdAt,
@@ -2023,6 +2039,8 @@ export const ctwaBackendService = {
             notes: saved.notes || '',
             email: saved.email || '',
             city: saved.city || '',
+            dealValue: saved.dealValue ?? null,
+            fromAd: Boolean(saved.ctwaClid),
             lastMessage: 'No messages yet',
             lastTimestamp: new Date(saved.createdAt).toLocaleTimeString(),
             lastCreatedAt: saved.createdAt,
@@ -2066,9 +2084,12 @@ export const ctwaBackendService = {
     notes?: string;
     email?: string;
     city?: string;
+    dealValue?: number | null;
   }) => {
     try {
       const formattedPhone = phoneNumber.replace(/[^0-9]/g, '');
+      const dealValue =
+        data.dealValue === undefined ? undefined : data.dealValue === null || !(Number(data.dealValue) > 0) ? null : Number(data.dealValue);
       const updated = await prisma.wellnessLabContact.upsert({
         where: { phoneNumber: formattedPhone },
         update: {
@@ -2078,6 +2099,7 @@ export const ctwaBackendService = {
           notes: data.notes !== undefined ? data.notes : undefined,
           email: data.email !== undefined ? data.email : undefined,
           city: data.city !== undefined ? data.city : undefined,
+          dealValue,
         },
         create: {
           phoneNumber: formattedPhone,
@@ -2087,8 +2109,17 @@ export const ctwaBackendService = {
           notes: data.notes || '',
           email: data.email || '',
           city: data.city || '',
+          dealValue: dealValue ?? null,
         },
       });
+
+      // A won lead from a Click to WhatsApp ad becomes a Purchase in Meta (once, when it has a value).
+      try {
+        await sendWonLeadPurchase(formattedPhone);
+      } catch (metaErr: any) {
+        console.error('[Meta CAPI WhatsApp Purchase Error]:', metaErr.message);
+      }
+
       return { success: true, contact: updated };
     } catch (err: any) {
       console.error('[WellnessLab updateWellnessContact Error]:', err.message);

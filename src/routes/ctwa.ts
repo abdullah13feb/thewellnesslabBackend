@@ -463,7 +463,7 @@ router.get('/wellness/contacts', async (req: Request, res: Response) => {
  */
 router.patch('/wellness/contacts/:phone', async (req: Request, res: Response) => {
   const { phone } = req.params;
-  const { customerName, leadStatus, tags, notes, email, city } = req.body;
+  const { customerName, leadStatus, tags, notes, email, city, dealValue } = req.body;
   const result = await ctwaBackendService.updateWellnessContact(phone, {
     customerName,
     leadStatus,
@@ -471,6 +471,7 @@ router.patch('/wellness/contacts/:phone', async (req: Request, res: Response) =>
     notes,
     email,
     city,
+    dealValue,
   });
   return res.json(result);
 });

@@ -3,6 +3,7 @@ import axios from "axios";
 import crypto from "crypto";
 import prisma from "../lib/prisma.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
+import { sendMetaEvent, userData, contentId } from "../lib/metaCapi.js";
 
 const router = Router();
 
@@ -370,6 +371,70 @@ async function fulfillPaymobOrder(orderId: string, transactionId?: string, paymo
 }
 
 /**
+ * Meta Conversions API Purchase for a paid order (Order or FlexOrder), sent once per order.
+ * event_id is the order id, the same eventID the browser Purchase uses on /payment/success,
+ * so Meta counts the sale once.
+ */
+async function sendMetaPurchase(orderId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: { include: { product: true } }, user: true },
+  });
+  const flex = order ? null : await prisma.flexOrder.findUnique({ where: { id: orderId } });
+  const target: any = order || flex;
+  if (!target || target.paymentStatus !== "paid" || target.metaPurchaseSentAt) return;
+
+  // Claim the order first, so a repeated webhook cannot send a second Purchase.
+  const claim = order
+    ? await prisma.order.updateMany({ where: { id: orderId, metaPurchaseSentAt: null }, data: { metaPurchaseSentAt: new Date() } })
+    : await prisma.flexOrder.updateMany({ where: { id: orderId, metaPurchaseSentAt: null }, data: { metaPurchaseSentAt: new Date() } });
+  if (claim.count === 0) return;
+
+  const items: { id: string; quantity: number; price: number }[] = order
+    ? order.items.map((it) => ({ id: contentId(it.product?.slug || it.productId), quantity: it.quantity, price: it.price }))
+    : ((flex?.items as any[]) || []).map((it: any) => ({
+        id: contentId(it.name || "item"),
+        quantity: Number(it.quantity) || 1,
+        price: Number(it.price) || 0,
+      }));
+
+  const user: Record<string, unknown> = userData({
+    email: target.guestEmail || order?.user?.email,
+    phone: target.guestPhone,
+    name: target.guestName,
+    city: target.city,
+  });
+  if (order?.fbp) user.fbp = order.fbp;
+  if (order?.fbc) user.fbc = order.fbc;
+  if (order?.clientIp) user.client_ip_address = order.clientIp;
+  if (order?.clientUserAgent) user.client_user_agent = order.clientUserAgent;
+
+  const clientUrl = process.env.CLIENT_URL || "https://www.thewellnesslab.ae";
+  const ok = await sendMetaEvent({
+    event_name: "Purchase",
+    event_id: orderId,
+    action_source: "website",
+    event_source_url: `${clientUrl}/payment/success`,
+    user_data: user,
+    custom_data: {
+      currency: "AED",
+      value: Number(target.totalPrice) || 0,
+      content_type: "product",
+      content_ids: items.map((it) => it.id),
+      contents: items.map((it) => ({ id: it.id, quantity: it.quantity, item_price: it.price })),
+      num_items: items.reduce((n, it) => n + it.quantity, 0),
+      order_id: orderId,
+    },
+  });
+
+  // Not accepted: release the claim so the next webhook retry can send it.
+  if (!ok) {
+    if (order) await prisma.order.update({ where: { id: orderId }, data: { metaPurchaseSentAt: null } });
+    else await prisma.flexOrder.update({ where: { id: orderId }, data: { metaPurchaseSentAt: null } });
+  }
+}
+
+/**
  * Paymob Webhook / Callback Notification Endpoint
  */
 router.all("/callback", async (req: Request, res: Response) => {
@@ -409,6 +474,14 @@ router.all("/callback", async (req: Request, res: Response) => {
 
     if (isSuccess && merchantOrderId) {
       await fulfillPaymobOrder(merchantOrderId, transactionId, paymobOrderId);
+      // Only a signed webhook proves the payment, so the server Purchase is sent from here only.
+      if (PAYMOB_HMAC_SECRET) {
+        try {
+          await sendMetaPurchase(merchantOrderId);
+        } catch (metaErr) {
+          console.error("Meta CAPI Purchase error:", metaErr);
+        }
+      }
     }
 
     // Return success to Paymob webhook

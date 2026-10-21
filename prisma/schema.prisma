@@ -125,6 +125,20 @@ model Order {
   stripePaymentId String?
   paymobOrderId String?
   paymobTransactionId String?
+
+  // Ad attribution captured at checkout, for the Meta Conversions API Purchase
+  fbp         String?
+  fbc         String?
+  fbclid      String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  clientIp        String?
+  clientUserAgent String?
+  metaPurchaseSentAt DateTime?
+
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }
@@ -573,6 +587,7 @@ model FlexOrder {
   stripePaymentId String?
   paymobOrderId   String?
   paymobTransactionId String?
+  metaPurchaseSentAt DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 }
@@ -732,6 +747,7 @@ model WellnessLabMessageLog {
   flowName       String   @default("")
   nodeId         String   @default("")
   nodeLabel      String   @default("")
+  status         String   @default("Sent")
   deviceId       String   @default("WellnessLab")
   createdAt      DateTime @default(now())
 
@@ -749,6 +765,13 @@ model WellnessLabContact {
   email          String?
   city           String?
   assignedAgent  String?
+  // Last Click to WhatsApp ad click, from the webhook referral
+  adId           String   @default("")
+  ctwaClid       String   @default("")
+  ctwaClickedAt  DateTime?
+  // Sale value in AED, sent to Meta as a Purchase when the lead is won
+  dealValue      Float?
+  metaPurchaseSentAt DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
