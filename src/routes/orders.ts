@@ -4,6 +4,7 @@ import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
 import { firstIp } from "../lib/metaCapi.js";
+import { linePrice, lineQuantity } from "../lib/pricing.js";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
@@ -392,7 +393,7 @@ router.post("/verify-payment", async (req: Request, res: Response) => {
 // CREATE order (Guest or User)
 router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
   try {
-    const { items, totalPrice, guestName, guestEmail, guestPhone, address, city, pincode, paymentMethod, stripePaymentId } = req.body;
+    const { items: requestedItems, guestName, guestEmail, guestPhone, address, city, pincode, paymentMethod, stripePaymentId } = req.body;
 
     // Check for auth manually since we removed the middleware to support guests
     // Note: This requires Clerk middleware to be loose or we just check req.auth if available.
@@ -408,12 +409,37 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
 
     const userId = req.auth?.userId;
 
-    if (!items || items.length === 0) {
+    if (!Array.isArray(requestedItems) || requestedItems.length === 0) {
       return res.status(400).json({
         success: false,
         error: "Items array is required",
       });
     }
+
+    const requestedIds = requestedItems.map((it: any) => String(it.productId || it.id || ""));
+    const catalog = await prisma.product.findMany({
+      where: { OR: [{ id: { in: requestedIds } }, { slug: { in: requestedIds } }] },
+    });
+    const catalogById = new Map<string, (typeof catalog)[number]>();
+    catalog.forEach((p) => {
+      catalogById.set(p.id, p);
+      catalogById.set(p.slug, p);
+    });
+    if (requestedIds.some((id: string) => !catalogById.has(id))) {
+      return res.status(400).json({
+        success: false,
+        error: "A product in your cart is no longer available. Please refresh your cart.",
+      });
+    }
+    const items = requestedItems.map((it: any, i: number) => {
+      const product = catalogById.get(requestedIds[i])!;
+      return {
+        ...it,
+        productId: product.id,
+        quantity: lineQuantity(it.quantity),
+        price: linePrice(product, it.price),
+      };
+    });
 
     // Validation
     if (!userId) {
@@ -435,7 +461,6 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
       }
     }
 
-    // Calc subtotal from items to prevent client manipulation
     const subtotal = items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
 
     // Fetch dynamic shipping cost from settings

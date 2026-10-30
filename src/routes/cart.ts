@@ -2,16 +2,30 @@ import { Router, Request, Response } from "express";
 import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
+import { linePrice, lineQuantity } from "../lib/pricing.js";
 
 const router = Router();
 
 // Helper to find cart by identifier (userId or guestId)
+// Lines saved before a price change in Products are brought up to the current price.
 const findCart = async (identifier: string) => {
   const isUser = identifier.startsWith("user_");
-  return await prisma.cart.findUnique({
+  const cart = await prisma.cart.findUnique({
     where: isUser ? { userId: identifier } : { guestId: identifier },
     include: { items: { include: { product: true } } },
   });
+  if (!cart) return cart;
+
+  const stale = cart.items.filter((item) => item.product && linePrice(item.product, item.price) !== item.price);
+  if (stale.length === 0) return cart;
+
+  for (const item of stale) {
+    item.price = linePrice(item.product, item.price);
+    await prisma.cartItem.update({ where: { id: item.id }, data: { price: item.price } });
+  }
+  cart.totalPrice = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  await prisma.cart.update({ where: { id: cart.id }, data: { totalPrice: cart.totalPrice } });
+  return cart;
 };
 
 // ADMIN: Get all carts
@@ -91,14 +105,21 @@ router.post(
   async (req: Request, res: Response<ApiResponse<any>>) => {
     try {
       const { identifier } = req.params;
-      const { productId, quantity, price } = req.body;
+      const { productId, price: requestedPrice } = req.body;
+      const quantity = lineQuantity(req.body.quantity);
 
-      if (!productId || !quantity || price === undefined) {
+      if (!productId) {
         return res.status(400).json({
           success: false,
-          error: "productId, quantity, and price are required",
+          error: "productId is required",
         });
       }
+
+      const product = await prisma.product.findUnique({ where: { id: String(productId) } });
+      if (!product) {
+        return res.status(404).json({ success: false, error: "Product not found" });
+      }
+      const price = linePrice(product, requestedPrice);
 
       let cart = await findCart(identifier);
       if (!cart) {
@@ -116,15 +137,15 @@ router.post(
       if (existingItem) {
         await prisma.cartItem.update({
           where: { id: existingItem.id },
-          data: { quantity: existingItem.quantity + quantity },
+          data: { quantity: existingItem.quantity + quantity, price },
         });
       } else {
         await prisma.cartItem.create({
           data: {
             cartId: cart.id,
-            productId,
+            productId: product.id,
             quantity,
-            price: parseFloat(price),
+            price,
           },
         });
       }
