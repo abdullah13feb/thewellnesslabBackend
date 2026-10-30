@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
+import { revalidateStorefront } from "../lib/storefrontRevalidate.js";
 
 const router = Router();
 
@@ -80,6 +81,7 @@ router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Request,
       },
     });
 
+    await revalidateStorefront(`product created: ${product.slug}`);
     res.status(201).json({ success: true, data: product });
   } catch (error) {
     console.error(error);
@@ -118,6 +120,7 @@ router.put("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Reques
       },
     });
 
+    await revalidateStorefront(`product updated: ${product.slug}`);
     res.json({ success: true, data: product });
   } catch (error) {
     res.status(500).json({ success: false, error: "Failed to update product" });
@@ -131,6 +134,7 @@ router.delete("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req: Req
       where: { id: req.params.id },
     });
 
+    await revalidateStorefront(`product deleted: ${req.params.id}`);
     res.json({ success: true, message: "Product deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, error: "Failed to delete product" });
