@@ -4,6 +4,8 @@ import crypto from "crypto";
 import prisma from "../lib/prisma.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
 import { sendMetaEvent, userData, contentId } from "../lib/metaCapi.js";
+import { priceOrder, toCents } from "../lib/orderPricing.js";
+import { checkPaymobTransaction, signReservation } from "../lib/paymob.js";
 
 const router = Router();
 
@@ -12,7 +14,6 @@ const PAYMOB_PUBLIC_KEY = (process.env.PAYMOB_PUBLIC_API_KEY || process.env.PAYM
 const PAYMOB_PRIVATE_KEY = (process.env.PAYMOB_PRIVATE_API_KEY || process.env.PAYMOB_SECRET_KEY || "").trim();
 const PAYMOB_INTEGRATION_ID = (process.env.PAYMOB_INTEGRATION_ID || "").trim();
 const PAYMOB_IFRAME_ID = (process.env.PAYMOB_IFRAME_ID || "").trim();
-const PAYMOB_HMAC_SECRET = (process.env.PAYMOB_HMAC_SECRET || "").trim();
 const PAYMOB_CARD_INTEGRATION_ID = (process.env.PAYMOB_CARD_INTEGRATION_ID || "").trim();
 const PAYMOB_APPLE_PAY_INTEGRATION_ID = (process.env.PAYMOB_APPLE_PAY_INTEGRATION_ID || "").trim();
 
@@ -256,56 +257,90 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
 });
 
 /**
- * Paymob HMAC Verification Helper
+ * Intention for the card / Apple Pay form embedded in the checkout page (Paymob Pixel).
+ * The order does not exist yet: an order id is reserved and the amount is priced server-side.
+ * The order is created with that id right before the payment runs (see POST /api/orders).
  */
-function verifyPaymobHmac(data: any, hmacSecret: string): boolean {
-  if (!hmacSecret) return true; // If secret is not provided in env, skip blocking
-
+router.post("/prepare-embedded", async (req: Request, res: Response) => {
   try {
-    const keys = [
-      "amount_cents",
-      "created_at",
-      "currency",
-      "error_occured",
-      "has_parent_transaction",
-      "id",
-      "integration_id",
-      "is_3d_secure",
-      "is_auth",
-      "is_capture",
-      "is_refunded",
-      "is_standalone_payment",
-      "order",
-      "owner",
-      "pending",
-      "source_data_pan",
-      "source_data_sub_type",
-      "source_data_type",
-      "success",
-    ];
+    if (!PAYMOB_PRIVATE_KEY || !PAYMOB_PUBLIC_KEY) {
+      return res.status(500).json({ success: false, error: "Paymob is not configured" });
+    }
 
-    const obj = data.obj || data;
+    const { items, couponCode, email } = req.body;
+    const priced = await priceOrder(items, couponCode);
+    if (!priced.ok) return res.status(priced.status).json({ success: false, error: priced.error });
 
-    const values = keys.map((key) => {
-      if (key === "order") return obj.order?.id || obj.order || "";
-      if (key === "source_data_pan") return obj.source_data?.pan || "";
-      if (key === "source_data_sub_type") return obj.source_data?.sub_type || "";
-      if (key === "source_data_type") return obj.source_data?.type || "";
-      return obj[key] !== undefined && obj[key] !== null ? String(obj[key]) : "";
+    const amountCents = toCents(priced.total);
+    const reference = `c${crypto.randomBytes(12).toString("hex")}`;
+    const clientUrl = process.env.CLIENT_URL || "https://www.thewellnesslab.ae";
+    const apiHost = req.get("host");
+
+    const ids = [PAYMOB_CARD_INTEGRATION_ID || PAYMOB_INTEGRATION_ID, PAYMOB_APPLE_PAY_INTEGRATION_ID]
+      .join(",")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .filter((id, i, all) => all.indexOf(id) === i)
+      .map((id) => (isNaN(Number(id)) ? id : Number(id)));
+
+    const contactEmail = typeof email === "string" && /^\S+@\S+\.\S+$/.test(email) ? email : "customer@thewellnesslab.ae";
+
+    const { data } = await axios.post(
+      "https://uae.paymob.com/v1/intention/",
+      {
+        amount: amountCents,
+        currency: "AED",
+        payment_methods: ids,
+        billing_data: {
+          first_name: "Customer",
+          last_name: "TheWellnessLab",
+          email: contactEmail,
+          phone_number: "+971500000000",
+          apartment: "NA",
+          floor: "NA",
+          street: "NA",
+          building: "NA",
+          shipping_method: "PKG",
+          postal_code: "00000",
+          city: "Dubai",
+          country: "AE",
+          state: "Dubai",
+        },
+        special_reference: reference,
+        extras: { merchant_order_id: reference, is_flex_order: "false" },
+        redirection_url: `${clientUrl}/payment/success?orderId=${reference}&gateway=paymob`,
+        ...(apiHost ? { notification_url: `https://${apiHost}/api/paymob/callback` } : {}),
+      },
+      { headers: { Authorization: `Token ${PAYMOB_PRIVATE_KEY}`, "Content-Type": "application/json" } }
+    );
+
+    const clientSecret = data?.client_secret || data?.cs;
+    if (!clientSecret) {
+      return res.status(502).json({ success: false, error: "Could not start card payment" });
+    }
+
+    res.json({
+      success: true,
+      publicKey: PAYMOB_PUBLIC_KEY,
+      clientSecret,
+      reference,
+      amountCents,
+      signature: signReservation(reference, amountCents, clientSecret),
+      applePayInline: (process.env.PAYMOB_PIXEL_APPLE_PAY || "").trim() === "true",
     });
-
-    const concatenatedStr = values.join("");
-    const calculatedHmac = crypto
-      .createHmac("sha512", hmacSecret)
-      .update(concatenatedStr)
-      .digest("hex");
-
-    const receivedHmac = data.hmac || obj.hmac || "";
-    return calculatedHmac.toLowerCase() === receivedHmac.toLowerCase();
-  } catch (e) {
-    console.error("Paymob HMAC calculation error:", e);
-    return false;
+  } catch (error: any) {
+    console.error("Paymob prepare-embedded error:", error?.response?.data || error.message || error);
+    res.status(500).json({ success: false, error: "Could not load the card form. Please try again." });
   }
+});
+
+/** Amount Paymob must have charged for an order (standard or flex). */
+async function payableAmountCents(orderId: string): Promise<number | null> {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { totalPrice: true } });
+  if (order) return toCents(order.totalPrice);
+  const flex = await prisma.flexOrder.findUnique({ where: { id: orderId }, select: { totalPrice: true } });
+  return flex ? toCents(flex.totalPrice) : null;
 }
 
 /**
@@ -456,12 +491,6 @@ router.all("/callback", async (req: Request, res: Response) => {
     const payload = req.method === "POST" ? req.body : req.query;
     console.log("Paymob Callback Received:", JSON.stringify(payload).slice(0, 300));
 
-    // Verify HMAC if secret is configured
-    if (PAYMOB_HMAC_SECRET && !verifyPaymobHmac(payload, PAYMOB_HMAC_SECRET)) {
-      console.error("Invalid Paymob Callback HMAC signature");
-      return res.status(400).json({ success: false, error: "Invalid HMAC signature" });
-    }
-
     const obj = payload.obj || payload;
     const isSuccess =
       obj.success === true ||
@@ -486,14 +515,20 @@ router.all("/callback", async (req: Request, res: Response) => {
       merchantOrderId = merchantOrderId.split("_")[0];
     }
 
-    if (isSuccess && merchantOrderId) {
-      await fulfillPaymobOrder(merchantOrderId, transactionId, paymobOrderId);
-      // Only a signed webhook proves the payment, so the server Purchase is sent from here only.
-      if (PAYMOB_HMAC_SECRET) {
-        try {
-          await sendMetaPurchase(merchantOrderId);
-        } catch (metaErr) {
-          console.error("Meta CAPI Purchase error:", metaErr);
+    // The body is not trusted: the transaction is looked up on Paymob before fulfilling.
+    if (isSuccess && merchantOrderId && transactionId) {
+      const expected = await payableAmountCents(merchantOrderId);
+      if (expected !== null) {
+        const check = await checkPaymobTransaction(transactionId, merchantOrderId, expected);
+        if (check.paid) {
+          await fulfillPaymobOrder(merchantOrderId, transactionId, check.paymobOrderId || paymobOrderId);
+          try {
+            await sendMetaPurchase(merchantOrderId);
+          } catch (metaErr) {
+            console.error("Meta CAPI Purchase error:", metaErr);
+          }
+        } else {
+          console.warn("Paymob callback not fulfilled:", merchantOrderId, check.reason);
         }
       }
     }
@@ -556,14 +591,36 @@ router.post("/verify-payment", async (req: Request, res: Response) => {
       return res.json({ success: true, order: existingFlex });
     }
 
-    // Attempt fulfillment
-    const fulfilledOrder = await fulfillPaymobOrder(targetOrderId, transactionId, paymobOrderId);
-
-    if (fulfilledOrder) {
-      return res.json({ success: true, order: fulfilledOrder });
+    const expected = existingOrder
+      ? toCents(existingOrder.totalPrice)
+      : existingFlex
+        ? toCents(existingFlex.totalPrice)
+        : null;
+    if (expected === null) {
+      return res.status(404).json({ success: false, error: "Order not found" });
     }
 
-    return res.json({ success: false, message: "Payment status could not be verified as paid" });
+    // Never mark paid from the redirect alone: confirm the transaction with Paymob.
+    let check;
+    try {
+      check = await checkPaymobTransaction(String(transactionId || ""), targetOrderId, expected);
+    } catch (err: any) {
+      console.error("Paymob transaction lookup failed:", err?.response?.data || err.message);
+      return res.json({ success: false, message: "Payment could not be confirmed yet" });
+    }
+    if (!check.paid) {
+      console.warn("Paymob verify not paid:", targetOrderId, check.reason);
+      return res.json({ success: false, message: "Payment status could not be verified as paid" });
+    }
+
+    const fulfilledOrder = await fulfillPaymobOrder(targetOrderId, String(transactionId), check.paymobOrderId || paymobOrderId);
+    try {
+      await sendMetaPurchase(targetOrderId);
+    } catch (metaErr) {
+      console.error("Meta CAPI Purchase error:", metaErr);
+    }
+
+    return res.json({ success: true, order: fulfilledOrder });
   } catch (error: any) {
     console.error("Verify Paymob Payment Error:", error);
     res.status(500).json({ success: false, error: "Payment verification failed" });

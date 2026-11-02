@@ -4,7 +4,8 @@ import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
 import { firstIp } from "../lib/metaCapi.js";
-import { linePrice, lineQuantity } from "../lib/pricing.js";
+import { priceOrder, toCents } from "../lib/orderPricing.js";
+import { verifyReservation } from "../lib/paymob.js";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
@@ -409,37 +410,12 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
 
     const userId = req.auth?.userId;
 
-    if (!Array.isArray(requestedItems) || requestedItems.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Items array is required",
-      });
+    const priced = await priceOrder(requestedItems, req.body.couponCode);
+    if (!priced.ok) {
+      return res.status(priced.status).json({ success: false, error: priced.error });
     }
-
-    const requestedIds = requestedItems.map((it: any) => String(it.productId || it.id || ""));
-    const catalog = await prisma.product.findMany({
-      where: { OR: [{ id: { in: requestedIds } }, { slug: { in: requestedIds } }] },
-    });
-    const catalogById = new Map<string, (typeof catalog)[number]>();
-    catalog.forEach((p) => {
-      catalogById.set(p.id, p);
-      catalogById.set(p.slug, p);
-    });
-    if (requestedIds.some((id: string) => !catalogById.has(id))) {
-      return res.status(400).json({
-        success: false,
-        error: "A product in your cart is no longer available. Please refresh your cart.",
-      });
-    }
-    const items = requestedItems.map((it: any, i: number) => {
-      const product = catalogById.get(requestedIds[i])!;
-      return {
-        ...it,
-        productId: product.id,
-        quantity: lineQuantity(it.quantity),
-        price: linePrice(product, it.price),
-      };
-    });
+    const { items, subtotal, shippingCharge, discount } = priced;
+    const validatedCouponCode = priced.couponCode;
 
     // Validation
     if (!userId) {
@@ -451,8 +427,6 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
         });
       }
     } else {
-      // User validation (ensure address is present if provided, or maybe we pull from profile later? 
-      // For now let's require address in body for both for simplicity of 'Checkout Form' request)
       if (!address || !city || !pincode) {
         return res.status(400).json({
           success: false,
@@ -461,105 +435,49 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
       }
     }
 
-    const subtotal = items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    const finalTotalPrice = priced.total;
 
-    // Fetch dynamic shipping cost from settings
-    const shippingSetting = await prisma.setting.findUnique({ where: { key: "shipping_cost" } });
-    let shippingCharge = 0;
-    if (shippingSetting && shippingSetting.value) {
-      const parsed = parseFloat(shippingSetting.value);
-      shippingCharge = isNaN(parsed) ? 0 : parsed;
-    }
-
-    // Handle Discount/Coupon
-    let discount = 0;
-    let validatedCouponCode = null;
-    const { couponCode } = req.body;
-
-    if (couponCode) {
-      const coupon = await prisma.coupon.findUnique({
-        where: { code: couponCode.toUpperCase(), isActive: true }
+    // Embedded Paymob card form: the order id and amount were reserved when the form loaded.
+    const reservation = req.body.paymobReservation;
+    let reservedId: string | undefined;
+    if (reservation) {
+      const amountCents = Number(reservation.amountCents);
+      const valid = verifyReservation(
+        String(reservation.reference || ""),
+        amountCents,
+        String(reservation.clientSecret || ""),
+        String(reservation.signature || "")
+      );
+      if (!valid) {
+        return res.status(400).json({ success: false, error: "Payment session expired. Please refresh the page and try again." });
+      }
+      if (toCents(finalTotalPrice) !== amountCents) {
+        return res.status(409).json({
+          success: false,
+          error: "Your order total changed. Please review it and pay again.",
+          code: "AMOUNT_CHANGED",
+        } as any);
+      }
+      reservedId = String(reservation.reference);
+      // A retry after a declined card reuses the order created on the first attempt.
+      const existing = await prisma.order.findUnique({
+        where: { id: reservedId },
+        include: { items: { include: { product: true } } },
       });
-
-      if (coupon) {
-        // Expiry check
-        const isExpired = coupon.expiry && new Date(coupon.expiry) < new Date();
-        const meetsMinPurchase = subtotal >= coupon.minPurchase;
-
-        if (!isExpired && meetsMinPurchase) {
-          let eligibleSubtotal = subtotal;
-          let isEligible = true;
-
-          if (coupon.applicableProducts && coupon.applicableProducts.length > 0) {
-            const productIds = (items || []).map((it: any) => String(it.productId || it.id || ""));
-            const dbProducts = await prisma.product.findMany({
-              where: {
-                OR: [
-                  { id: { in: productIds } },
-                  { slug: { in: productIds } }
-                ]
-              },
-              select: { id: true, slug: true, name: true }
-            });
-
-            const productMap = new Map<string, { id: string; slug: string; name: string }>();
-            dbProducts.forEach(p => {
-              productMap.set(p.id, p);
-              productMap.set(p.slug, p);
-            });
-
-            const allowedSet = new Set(coupon.applicableProducts.map(p => p.toLowerCase().trim()));
-
-            const eligibleItems = (items || []).filter((item: any) => {
-              const rawId = String(item.productId || item.id || "");
-              const rawName = String(item.name || "").toLowerCase();
-              const dbProduct = productMap.get(rawId);
-              const dbSlug = dbProduct?.slug?.toLowerCase();
-              const dbId = dbProduct?.id?.toLowerCase();
-              const dbName = dbProduct?.name?.toLowerCase();
-
-              for (const allowed of allowedSet) {
-                if (allowed === rawId.toLowerCase()) return true;
-                if (dbSlug && allowed === dbSlug) return true;
-                if (dbId && allowed === dbId) return true;
-                if (allowed.includes("pro") && (rawName.includes("rex pro") || (dbName && dbName.includes("rex pro")))) return true;
-                if (allowed.includes("core") && (rawName.includes("rex core") || (dbName && dbName.includes("rex core")))) return true;
-                if (allowed.includes("ultra") && (rawName.includes("rex ultra") || (dbName && dbName.includes("rex ultra")))) return true;
-                if (allowed.includes("prestige") && (rawName.includes("rex prestige") || (dbName && dbName.includes("rex prestige")))) return true;
-              }
-              return false;
-            });
-
-            if (eligibleItems.length === 0) {
-              isEligible = false;
-            } else {
-              eligibleSubtotal = eligibleItems.reduce((sum: number, it: any) => {
-                const itemPrice = Number(it.price) || 0;
-                const itemQty = Number(it.quantity) || 1;
-                return sum + (itemPrice * itemQty);
-              }, 0);
-            }
-          }
-
-          if (isEligible) {
-            if (coupon.type === "PERCENTAGE") {
-              discount = (eligibleSubtotal * coupon.discount) / 100;
-            } else {
-              discount = Math.min(coupon.discount, eligibleSubtotal);
-            }
-            validatedCouponCode = coupon.code;
-          }
+      if (existing) {
+        if (existing.paymentStatus === "paid") {
+          return res.status(400).json({ success: false, error: "This order is already paid." });
         }
+        return res.status(200).json({ success: true, data: existing, message: "Order already created" });
       }
     }
-
-    const finalTotalPrice = subtotal + shippingCharge - discount;
 
     const attr = req.body.attribution || {};
     const clip = (v: unknown, max = 500) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
 
     const order = await prisma.order.create({
       data: {
+        ...(reservedId ? { id: reservedId } : {}),
         userId: userId || undefined,
         guestName: guestName || null,
         guestEmail: guestEmail || null,
