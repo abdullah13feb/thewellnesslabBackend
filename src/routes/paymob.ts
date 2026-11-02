@@ -13,6 +13,19 @@ const PAYMOB_PRIVATE_KEY = (process.env.PAYMOB_PRIVATE_API_KEY || process.env.PA
 const PAYMOB_INTEGRATION_ID = (process.env.PAYMOB_INTEGRATION_ID || "").trim();
 const PAYMOB_IFRAME_ID = (process.env.PAYMOB_IFRAME_ID || "").trim();
 const PAYMOB_HMAC_SECRET = (process.env.PAYMOB_HMAC_SECRET || "").trim();
+const PAYMOB_CARD_INTEGRATION_ID = (process.env.PAYMOB_CARD_INTEGRATION_ID || "").trim();
+const PAYMOB_APPLE_PAY_INTEGRATION_ID = (process.env.PAYMOB_APPLE_PAY_INTEGRATION_ID || "").trim();
+
+/**
+ * Integration IDs to offer for the method the shopper picked at checkout.
+ * "apple_pay" opens Paymob's page with only Apple Pay; "card" offers cards (and Google Pay).
+ * Falls back to PAYMOB_INTEGRATION_ID (all methods) when the specific ID is not configured.
+ */
+function integrationIdsFor(method?: string): string {
+  if (method === "apple_pay" && PAYMOB_APPLE_PAY_INTEGRATION_ID) return PAYMOB_APPLE_PAY_INTEGRATION_ID;
+  if (method === "card" && PAYMOB_CARD_INTEGRATION_ID) return PAYMOB_CARD_INTEGRATION_ID;
+  return PAYMOB_INTEGRATION_ID;
+}
 
 /**
  * Helper: Parse Full Name into First Name & Last Name
@@ -31,7 +44,8 @@ function parseName(fullName?: string | null) {
  */
 router.post("/create-checkout-session", async (req: Request, res: Response) => {
   try {
-    const { orderId } = req.body;
+    const { orderId, method } = req.body;
+    const integrationIdList = integrationIdsFor(typeof method === "string" ? method : undefined);
 
     if (!orderId) {
       return res.status(400).json({ success: false, error: "Order ID is required" });
@@ -88,7 +102,7 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
 
     // --- Paymob UAE Intention API (Unified Checkout) ---
     if (PAYMOB_PRIVATE_KEY) {
-      if (!PAYMOB_INTEGRATION_ID) {
+      if (!integrationIdList) {
         return res.status(400).json({
           success: false,
           error: "PAYMOB_INTEGRATION_ID is missing. Please add your Integration ID from Paymob Dashboard (Developers -> Payment Integrations) into backend/.env file as PAYMOB_INTEGRATION_ID.",
@@ -96,7 +110,7 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
       }
 
       try {
-        const rawIds = PAYMOB_INTEGRATION_ID.split(",").map((id) => id.trim()).filter(Boolean);
+        const rawIds = integrationIdList.split(",").map((id) => id.trim()).filter(Boolean);
         const integrationIds = rawIds.map((id) => (isNaN(Number(id)) ? id : Number(id)));
 
         const payload: any = {
@@ -194,7 +208,7 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
         currency: "AED",
       };
 
-      const primaryId = (PAYMOB_INTEGRATION_ID || "").split(",")[0].trim();
+      const primaryId = (integrationIdList || "").split(",")[0].trim();
       if (primaryId && !isNaN(Number(primaryId))) {
         keyPayload.integration_id = Number(primaryId);
       }
@@ -375,7 +389,7 @@ async function fulfillPaymobOrder(orderId: string, transactionId?: string, paymo
  * event_id is the order id, the same eventID the browser Purchase uses on /payment/success,
  * so Meta counts the sale once.
  */
-async function sendMetaPurchase(orderId: string) {
+export async function sendMetaPurchase(orderId: string) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { items: { include: { product: true } }, user: true },
