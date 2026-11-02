@@ -2,6 +2,7 @@ import { Router } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js";
 import { sendLeadNotificationEmail } from "../lib/email.js";
+import { attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
 
 const router = Router();
 
@@ -120,20 +121,24 @@ router.delete("/statuses/:id", requireAuthOrApiKey, requireAdminOrApiKey, async 
 // Create a lead publicly (e.g., from Quiz)
 router.post("/public", async (req, res) => {
   try {
-    const { name, phone, email, source, city } = req.body;
+    const { name, phone, email, source, city, quiz } = req.body;
+    const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : undefined);
 
-    if (!name) {
+    if (!str(name, 120)) {
       return res.status(400).json({ success: false, error: "Name is required" });
     }
 
+    const quizFields = buildQuizFields(quiz);
+
     const lead = await prisma.lead.create({
       data: {
-        name,
-        phone,
-        email,
-        source: source || "Quiz",
-        city,
+        name: str(name, 120)!,
+        phone: str(phone, 40),
+        email: str(email, 200),
+        source: str(source, 60) || "Quiz",
+        city: str(city, 120),
         status: "NEW",
+        ...(quizFields ? { dynamicFields: quizFields } : {}),
       },
     });
 
@@ -206,7 +211,14 @@ router.get("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    res.json({ success: true, data: leads });
+    let data: any[] = leads;
+    try {
+      data = await attachQuizPurchases(leads);
+    } catch (err) {
+      console.error("Failed to match quiz leads to orders:", err);
+    }
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error("Error fetching leads:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
@@ -225,7 +237,14 @@ router.get("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) =
       return res.status(404).json({ success: false, error: "Lead not found" });
     }
 
-    res.json({ success: true, data: lead });
+    let data: any = lead;
+    try {
+      [data] = await attachQuizPurchases([lead]);
+    } catch (err) {
+      console.error("Failed to match quiz lead to orders:", err);
+    }
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error("Error fetching lead:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });

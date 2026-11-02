@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import prisma from './prisma.js';
+import { QUIZ_FIELDS, suggestedProductOf } from './quizLead.js';
 
 dotenv.config();
 
@@ -230,7 +231,8 @@ export const sendLeadNotificationEmail = async (lead: any) => {
       return;
     }
 
-    const defaultSubject = `🚨 New Lead Received: ${lead.name || "Form Submission"} (${lead.source || "Website"})`;
+    const suggestedProduct = suggestedProductOf(lead);
+    const defaultSubject = `🚨 New Lead Received: ${lead.name || "Form Submission"} (${lead.source || "Website"})${suggestedProduct ? ` - Suggested: ${suggestedProduct}` : ""}`;
     const finalSubject = config.emailSubject && config.emailSubject.trim() !== ""
       ? config.emailSubject
           .replace(/{{name}}/g, lead.name || "Form Submission")
@@ -238,17 +240,38 @@ export const sendLeadNotificationEmail = async (lead: any) => {
           .replace(/{{email}}/g, lead.email || "")
           .replace(/{{phone}}/g, lead.phone || "")
           .replace(/{{city}}/g, lead.city || "")
+          .replace(/{{product}}/g, suggestedProduct)
       : defaultSubject;
+
+    const esc = (v: unknown) =>
+      String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+    const df: Record<string, unknown> =
+      lead.dynamicFields && typeof lead.dynamicFields === "object" ? { ...lead.dynamicFields } : {};
+    const suggested = df[QUIZ_FIELDS.suggested] ? String(df[QUIZ_FIELDS.suggested]) : "";
+    const alsoConsider = df[QUIZ_FIELDS.also] ? String(df[QUIZ_FIELDS.also]) : "";
+    delete df[QUIZ_FIELDS.suggested];
+    delete df[QUIZ_FIELDS.also];
+
+    const suggestedHtml = suggested
+      ? `
+        <div style="margin-top: 20px; padding: 16px 18px; background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">
+          <div style="font-size: 11px; font-weight: 700; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px;">Suggested Product (Quiz Match)</div>
+          <div style="font-size: 20px; font-weight: 800; color: #111827; margin-top: 4px;">${esc(suggested)}</div>
+          ${alsoConsider ? `<div style="font-size: 13px; color: #4b5563; margin-top: 4px;">Also consider: <strong>${esc(alsoConsider)}</strong></div>` : ""}
+        </div>
+      `
+      : "";
 
     // Format dynamic fields into clean HTML table rows if present
     let dynamicFieldsHtml = "";
-    if (lead.dynamicFields && typeof lead.dynamicFields === "object" && Object.keys(lead.dynamicFields).length > 0) {
-      const rows = Object.entries(lead.dynamicFields)
+    if (Object.keys(df).length > 0) {
+      const rows = Object.entries(df)
         .map(
           ([key, val]) => `
           <tr>
-            <td style="padding: 8px 12px; font-weight: 600; color: #4b5563; border-bottom: 1px solid #f3f4f6; width: 40%; font-size: 13px;">${key}</td>
-            <td style="padding: 8px 12px; color: #111827; border-bottom: 1px solid #f3f4f6; font-size: 13px;">${String(val)}</td>
+            <td style="padding: 8px 12px; font-weight: 600; color: #4b5563; border-bottom: 1px solid #f3f4f6; width: 40%; font-size: 13px;">${esc(key)}</td>
+            <td style="padding: 8px 12px; color: #111827; border-bottom: 1px solid #f3f4f6; font-size: 13px;">${esc(val)}</td>
           </tr>
         `
         )
@@ -334,6 +357,8 @@ export const sendLeadNotificationEmail = async (lead: any) => {
                   <td class="info-val">${new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai", dateStyle: "medium", timeStyle: "short" })} (GST)</td>
                 </tr>
               </table>
+
+              ${suggestedHtml}
 
               ${dynamicFieldsHtml}
 
