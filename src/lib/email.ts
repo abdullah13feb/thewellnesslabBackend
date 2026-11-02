@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import prisma from './prisma.js';
 import { QUIZ_FIELDS, suggestedProductOf } from './quizLead.js';
+import { IP_FIELDS } from './ipLocation.js';
 
 dotenv.config();
 
@@ -252,6 +253,23 @@ export const sendLeadNotificationEmail = async (lead: any) => {
     const alsoConsider = df[QUIZ_FIELDS.also] ? String(df[QUIZ_FIELDS.also]) : "";
     delete df[QUIZ_FIELDS.suggested];
     delete df[QUIZ_FIELDS.also];
+    const ipAddress = df[IP_FIELDS.ip] ? String(df[IP_FIELDS.ip]) : "";
+    const ipLocation = df[IP_FIELDS.location] ? String(df[IP_FIELDS.location]) : "";
+    const ipIsp = df[IP_FIELDS.isp] ? String(df[IP_FIELDS.isp]) : "";
+    delete df[IP_FIELDS.ip];
+    delete df[IP_FIELDS.location];
+    delete df[IP_FIELDS.isp];
+    const ipRowsHtml = ipAddress
+      ? `
+                <tr>
+                  <td class="info-label">IP Address</td>
+                  <td class="info-val">${esc(ipAddress)}</td>
+                </tr>
+                <tr>
+                  <td class="info-label">IP Location</td>
+                  <td class="info-val">${ipLocation ? esc(ipLocation) : "Unknown"}${ipIsp ? `<div style="font-size: 12px; color: #6b7280; font-weight: 400;">${esc(ipIsp)}</div>` : ""}</td>
+                </tr>`
+      : "";
 
     const suggestedHtml = suggested
       ? `
@@ -335,7 +353,7 @@ export const sendLeadNotificationEmail = async (lead: any) => {
                 <tr>
                   <td class="info-label">City / Location</td>
                   <td class="info-val">${lead.city || "N/A"}</td>
-                </tr>
+                </tr>${ipRowsHtml}
                 <tr>
                   <td class="info-label">Company</td>
                   <td class="info-val">${lead.company || "N/A"}</td>

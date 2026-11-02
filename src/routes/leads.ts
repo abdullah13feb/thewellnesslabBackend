@@ -3,6 +3,7 @@ import prisma from "../lib/prisma.js";
 import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js";
 import { sendLeadNotificationEmail } from "../lib/email.js";
 import { attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
+import { ipFields } from "../lib/ipLocation.js";
 
 const router = Router();
 
@@ -128,7 +129,7 @@ router.post("/public", async (req, res) => {
       return res.status(400).json({ success: false, error: "Name is required" });
     }
 
-    const quizFields = buildQuizFields(quiz);
+    const extraFields = { ...(buildQuizFields(quiz) || {}), ...(await ipFields(req)) };
 
     const lead = await prisma.lead.create({
       data: {
@@ -138,7 +139,7 @@ router.post("/public", async (req, res) => {
         source: str(source, 60) || "Quiz",
         city: str(city, 120),
         status: "NEW",
-        ...(quizFields ? { dynamicFields: quizFields } : {}),
+        ...(Object.keys(extraFields).length ? { dynamicFields: extraFields } : {}),
       },
     });
 
