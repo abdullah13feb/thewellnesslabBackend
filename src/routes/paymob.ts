@@ -6,6 +6,7 @@ import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/e
 import { sendMetaEvent, userData, contentId } from "../lib/metaCapi.js";
 import { priceOrder, toCents } from "../lib/orderPricing.js";
 import { checkPaymobTransaction, signReservation } from "../lib/paymob.js";
+import { clearCart } from "../lib/cart.js";
 
 const router = Router();
 
@@ -364,6 +365,15 @@ async function fulfillPaymobOrder(orderId: string, transactionId?: string, paymo
         },
         include: { items: { include: { product: true } } },
       });
+
+      // The cart is kept until payment succeeds; the success page clears guest carts in the browser.
+      if (updatedOrder.userId) {
+        try {
+          await clearCart({ userId: updatedOrder.userId });
+        } catch (err) {
+          console.error("Failed to clear cart after Paymob payment:", err);
+        }
+      }
 
       // Send Order Confirmation Email
       try {

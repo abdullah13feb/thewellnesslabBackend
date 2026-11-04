@@ -6,6 +6,7 @@ import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/e
 import { firstIp } from "../lib/metaCapi.js";
 import { priceOrder, toCents } from "../lib/orderPricing.js";
 import { verifyReservation } from "../lib/paymob.js";
+import { clearCart, ONLINE_PAYMENT_METHODS } from "../lib/cart.js";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
@@ -518,36 +519,17 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
       include: { items: { include: { product: true } } },
     });
 
-    // Clear user's cart if user
-    if (userId) {
-      const cart = await prisma.cart.findUnique({ where: { userId } });
-      if (cart) {
-        await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-        await prisma.cart.update({
-          where: { id: cart.id },
-          data: { totalPrice: 0 },
-        });
-      }
-    } else if (req.body.guestId) {
-      // Clear guest cart
-      const guestId = req.body.guestId;
-      const cart = await prisma.cart.findUnique({ where: { guestId } });
-      if (cart) {
-        // Option 1: Delete entire cart (if we want it gone from DB)
-        // await prisma.cart.delete({ where: { id: cart.id } });
-
-        // Option 2: Clear items (keep cart for history/session) - PREFERRED
-        await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-        await prisma.cart.update({
-          where: { id: cart.id },
-          data: { totalPrice: 0 },
-        });
-      }
+    // Online payments keep the cart until the payment succeeds (see lib/cart.ts). Only storefronts that
+    // empty the cart on the success page send keepCartUntilPaid; older ones still expect it emptied here.
+    const keepCart = req.body.keepCartUntilPaid === true && ONLINE_PAYMENT_METHODS.includes(paymentMethod);
+    if (!keepCart) {
+      if (userId) await clearCart({ userId });
+      else if (req.body.guestId) await clearCart({ guestId: String(req.body.guestId) });
     }
 
     // Send Confirmation Email
     // check if COD, send email immediately. Online payments wait for verification.
-    if (!['stripe', 'paymob', 'apple_pay', 'tabby'].includes(paymentMethod)) {
+    if (!ONLINE_PAYMENT_METHODS.includes(paymentMethod)) {
       try {
         let userEmail = order.guestEmail;
         if (!userEmail && userId) {

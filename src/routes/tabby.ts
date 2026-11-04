@@ -3,11 +3,13 @@ import axios from "axios";
 import prisma from "../lib/prisma.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
 import { sendMetaPurchase } from "./paymob.js";
+import { clearCart } from "../lib/cart.js";
 
 const router = Router();
 
 const TABBY_API = "https://api.tabby.ai";
 const TABBY_SECRET_KEY = (process.env.TABBY_SECRET_KEY || process.env.TABBY_SECRET || "").trim();
+const TABBY_PUBLIC_KEY = (process.env.TABBY_PUBLIC_KEY || "").trim();
 const TABBY_MERCHANT_CODE = (process.env.TABBY_MERCHANT_CODE || "").trim();
 // Optional: the header value set when registering the webhook with Tabby.
 const TABBY_WEBHOOK_SECRET = (process.env.TABBY_WEBHOOK_SECRET || "").trim();
@@ -18,6 +20,157 @@ const tabbyHeaders = () => ({
 });
 
 const money = (n: number) => (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
+
+const clean = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+
+// Tabby accepts +971500000001, 971500000001, 0500000001 or 500000001; the checkout form allows spaces and dashes.
+const normalizePhone = (v: unknown) => {
+  const s = clean(v);
+  if (!s) return undefined;
+  const digits = s.replace(/[^\d+]/g, "");
+  return digits.replace(/\d/g, "").length > 1 || digits.replace(/\D/g, "").length < 7 ? undefined : digits;
+};
+
+const phoneTail = (v: unknown) => (normalizePhone(v) || "").replace(/\D/g, "").slice(-9);
+
+// Drops undefined fields so Tabby never receives empty strings or placeholders.
+const compact = <T extends Record<string, unknown>>(obj: T) =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== "")) as Partial<T>;
+
+const HISTORY_STATUS: Record<string, string> = {
+  PENDING: "new",
+  PROCESSING: "processing",
+  SHIPPED: "processing",
+  DELIVERED: "complete",
+  CANCELLED: "canceled",
+};
+
+/**
+ * Builds buyer_history and order_history from the customer's earlier orders, matched by account,
+ * email or phone (guests have no account). Abandoned online orders that were never paid are not purchases.
+ */
+async function buyerContext(opts: { userId?: string | null; email?: string; phone?: string; excludeOrderId?: string }) {
+  const email = clean(opts.email)?.toLowerCase();
+  const tail = phoneTail(opts.phone);
+  const user = opts.userId ? await prisma.user.findUnique({ where: { id: opts.userId } }) : null;
+
+  const or: any[] = [];
+  if (opts.userId) or.push({ userId: opts.userId });
+  if (email) or.push({ guestEmail: { equals: email, mode: "insensitive" } });
+  if (tail.length >= 7) or.push({ guestPhone: { contains: tail.slice(-4) } });
+
+  const candidates = or.length
+    ? await prisma.order.findMany({
+        where: {
+          OR: or,
+          ...(opts.excludeOrderId ? { id: { not: opts.excludeOrderId } } : {}),
+          AND: [{ OR: [{ paymentStatus: "paid" }, { paymentMethod: "cod" }] }],
+        },
+        include: { items: { include: { product: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      })
+    : [];
+
+  const previous = candidates.filter(
+    (o) =>
+      (opts.userId && o.userId === opts.userId) ||
+      (email && o.guestEmail?.toLowerCase() === email) ||
+      (tail.length >= 7 && phoneTail(o.guestPhone) === tail)
+  );
+
+  const firstSeen = previous.reduce<Date | null>((min, o) => (!min || o.createdAt < min ? o.createdAt : min), null);
+  const registeredSince = user?.createdAt || firstSeen || new Date();
+
+  return {
+    buyer_history: {
+      registered_since: registeredSince.toISOString(),
+      loyalty_level: previous.filter((o) => o.status !== "CANCELLED").length,
+    },
+    order_history: previous.slice(0, 10).map((o) => ({
+      purchased_at: o.createdAt.toISOString(),
+      amount: money(o.totalPrice),
+      payment_method: o.paymentMethod === "cod" ? "cod" : "card",
+      status: HISTORY_STATUS[o.status] || "unknown",
+      buyer: compact({ name: clean(o.guestName), email: clean(o.guestEmail), phone: normalizePhone(o.guestPhone) }),
+      shipping_address: compact({ city: clean(o.city), address: clean(o.address), zip: clean(o.pincode) }),
+      items: o.items.map((it) =>
+        compact({
+          reference_id: it.productId,
+          title: it.product?.name || undefined,
+          quantity: it.quantity,
+          unit_price: money(it.price),
+          category: it.product?.category || "Wellness",
+        })
+      ),
+    })),
+  };
+}
+
+/** Public key and merchant code for the on-site snippets. Both are safe to expose; the secret key never is. */
+router.get("/config", (_req: Request, res: Response) => {
+  res.set("Cache-Control", "public, max-age=300");
+  res.json({ success: true, publicKey: TABBY_PUBLIC_KEY || null, merchantCode: TABBY_MERCHANT_CODE || null });
+});
+
+/**
+ * Background pre-scoring: asks Tabby whether this shopper would be approved before they choose Tabby.
+ * Any error or timeout answers "available" so Tabby stays visible, as Tabby recommends.
+ */
+router.post("/prescore", async (req: Request, res: Response) => {
+  const available = () => res.json({ success: true, available: true });
+  try {
+    if (!TABBY_SECRET_KEY || !TABBY_MERCHANT_CODE) return available();
+
+    const amount = Number(req.body?.amount);
+    const email = clean(req.body?.email);
+    const phone = normalizePhone(req.body?.phone);
+    if (!(amount > 0) || amount > 1_000_000 || !email || !phone) {
+      return res.status(400).json({ success: false, error: "amount, email and phone are required" });
+    }
+
+    const items: any[] = Array.isArray(req.body?.items) ? req.body.items.slice(0, 50) : [];
+    const history = await buyerContext({ userId: req.auth?.userId, email, phone });
+
+    const payload = {
+      payment: {
+        amount: money(amount),
+        currency: "AED",
+        buyer: compact({ email, phone, name: clean(req.body?.name) }),
+        ...(items.length
+          ? {
+              order: {
+                reference_id: `prescore-${Date.now()}`,
+                items: items.map((it) =>
+                  compact({
+                    reference_id: clean(String(it.productId ?? "")),
+                    title: clean(it.name) || "Item",
+                    quantity: Math.max(1, Number(it.quantity) || 1),
+                    unit_price: money(it.price),
+                    category: "Wellness",
+                  })
+                ),
+              },
+            }
+          : {}),
+        ...history,
+      },
+      lang: "en",
+      merchant_code: TABBY_MERCHANT_CODE,
+    };
+
+    const { data } = await axios.post(`${TABBY_API}/api/v2/checkout`, payload, { headers: tabbyHeaders(), timeout: 8000 });
+
+    if (data?.status === "rejected") {
+      const reason = data?.configuration?.products?.installments?.rejection_reason;
+      return res.json({ success: true, available: false, reason: reason || "not_available", message: rejectionMessage(reason) });
+    }
+    return available();
+  } catch (error: any) {
+    console.error("Tabby pre-scoring error:", error?.response?.data || error.message || error);
+    return available();
+  }
+});
 
 /**
  * Create a Tabby checkout session for an order and return the hosted payment URL.
@@ -42,23 +195,21 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
     const returnUrl = (result: string) =>
       `${clientUrl}/payment/success?orderId=${order.id}&gateway=tabby&result=${result}`;
 
-    const email = order.guestEmail || order.user?.email || "";
-    const name = order.guestName || "Customer";
+    const email = clean(order.guestEmail) || clean(order.user?.email);
+    const phone = normalizePhone(order.guestPhone);
+    const history = await buyerContext({ userId: order.userId, email, phone, excludeOrderId: order.id });
 
     const payload = {
       payment: {
         amount: money(order.totalPrice),
         currency: "AED",
         description: `The Wellness Lab order ${order.id}`,
-        buyer: {
-          phone: order.guestPhone || "",
-          email,
-          name,
-        },
+        buyer: compact({ phone, email, name: clean(order.guestName) }),
         shipping_address: {
           city: order.city,
           address: order.address,
-          zip: order.pincode || "00000",
+          // Tabby requires zip; the UAE has no postcodes, so the checkout form sends 00000.
+          zip: clean(order.pincode) || "00000",
         },
         order: {
           reference_id: order.id,
@@ -66,21 +217,19 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
           shipping_amount: money(order.shippingCharge),
           discount_amount: money(order.discount),
           updated_at: order.updatedAt.toISOString(),
-          items: order.items.map((it) => ({
-            reference_id: it.productId,
-            title: it.product?.name || "Item",
-            quantity: it.quantity,
-            unit_price: money(it.price),
-            discount_amount: "0.00",
-            category: it.product?.category || "Wellness",
-            image_url: it.product?.image || undefined,
-          })),
+          items: order.items.map((it) =>
+            compact({
+              reference_id: it.productId,
+              title: it.product?.name || "Item",
+              quantity: it.quantity,
+              unit_price: money(it.price),
+              discount_amount: "0.00",
+              category: it.product?.category || "Wellness",
+              image_url: clean(it.product?.image),
+            })
+          ),
         },
-        buyer_history: {
-          registered_since: (order.user?.createdAt || order.createdAt).toISOString(),
-          loyalty_level: 0,
-        },
-        order_history: [],
+        ...history,
         meta: { order_id: order.id },
       },
       lang: "en",
@@ -97,7 +246,7 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
     const webUrl: string | undefined = data?.configuration?.available_products?.installments?.[0]?.web_url;
     if (data?.status !== "created" || !webUrl) {
       const reason = data?.configuration?.products?.installments?.rejection_reason;
-      return res.status(400).json({ success: false, error: rejectionMessage(reason) });
+      return res.status(400).json({ success: false, rejected: true, reason, error: rejectionMessage(reason) });
     }
 
     res.json({ success: true, url: webUrl, sessionId: data.id, paymentId: data.payment?.id });
@@ -110,14 +259,15 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
   }
 });
 
+// Tabby's official customer-facing rejection texts.
 function rejectionMessage(reason?: string) {
   switch (reason) {
     case "order_amount_too_high":
-      return "This purchase is above the amount Tabby can split. Please use a card or Apple Pay.";
+      return "This purchase is above your current spending limit with Tabby, try a smaller cart or use another payment method";
     case "order_amount_too_low":
-      return "This purchase is below Tabby's minimum amount. Please use a card or Apple Pay.";
+      return "The purchase amount is below the minimum amount required to use Tabby, try adding more items or use another payment method";
     default:
-      return "Sorry, Tabby can't approve this purchase. Please use a card or Apple Pay.";
+      return "Sorry, Tabby is unable to approve this purchase. Please use an alternative payment method for your order.";
   }
 }
 
@@ -165,6 +315,14 @@ async function processTabbyPayment(paymentId: string, expectedOrderId?: string) 
       where: { id: orderId },
       include: { items: { include: { product: true } }, user: true },
     });
+    // The cart is kept until payment succeeds; the success page clears guest carts in the browser.
+    if (updated?.userId) {
+      try {
+        await clearCart({ userId: updated.userId });
+      } catch (err) {
+        console.error("Failed to clear cart after Tabby payment:", err);
+      }
+    }
     if (updated) {
       const userEmail = updated.guestEmail || updated.user?.email || null;
       try {
