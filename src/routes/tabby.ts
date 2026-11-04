@@ -191,7 +191,7 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
     if (order.paymentStatus === "paid") return res.status(400).json({ success: false, error: "Order is already paid" });
 
-    const clientUrl = (process.env.CLIENT_URL || "https://www.thewellnesslab.ae").trim();
+    const clientUrl = returnOrigin(req.body?.returnOrigin);
     const returnUrl = (result: string) =>
       `${clientUrl}/payment/success?orderId=${order.id}&gateway=tabby&result=${result}`;
 
@@ -258,6 +258,17 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
     });
   }
 });
+
+// Shoppers return to the storefront they paid from (live site, an Amplify branch such as staging, or local dev).
+// Anything else falls back to CLIENT_URL, so the redirect can't be pointed at another site.
+const ALLOWED_RETURN_ORIGIN = /^https:\/\/((www\.)?thewellnesslab\.ae|[a-z0-9-]+\.d33xlkpzqgsah0\.amplifyapp\.com)$|^http:\/\/localhost:\d+$/;
+
+function returnOrigin(requested: unknown) {
+  const fallback = (process.env.CLIENT_URL || "https://www.thewellnesslab.ae").trim();
+  if (typeof requested !== "string") return fallback;
+  const origin = requested.trim().replace(/\/+$/, "");
+  return ALLOWED_RETURN_ORIGIN.test(origin) ? origin : fallback;
+}
 
 // Tabby's official customer-facing rejection texts.
 function rejectionMessage(reason?: string) {
