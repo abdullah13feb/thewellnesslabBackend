@@ -339,6 +339,102 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
   }
 });
 
+// Marks an order paid via Stripe and sends the confirmation + admin emails (only the first time).
+async function fulfillStripeOrder(orderId: string, paymentIntentId: string) {
+  const existing = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: { include: { product: true } } },
+  });
+  if (!existing) return null;
+  if (existing.paymentStatus === "paid") return existing;
+
+  const order = await prisma.order.update({
+    where: { id: orderId },
+    data: { paymentStatus: "paid", status: "PROCESSING", stripePaymentId: paymentIntentId },
+    include: { items: { include: { product: true } } },
+  });
+
+  try {
+    let userEmail = order.guestEmail;
+    if (!userEmail && order.userId) {
+      const user = await prisma.user.findUnique({ where: { id: order.userId } });
+      userEmail = user?.email || null;
+    }
+    if (userEmail) await sendOrderConfirmationEmail({ ...order, userEmail });
+  } catch (emailErr) {
+    console.error("Failed to send order confirmation email:", emailErr);
+  }
+  try {
+    await sendOrderNotificationEmail(order);
+  } catch (err) {
+    console.error("Failed to send order notification email on Stripe payment:", err);
+  }
+  return order;
+}
+
+// Embedded Stripe card form: create (or reuse) a PaymentIntent for an unpaid order.
+router.post("/create-payment-intent", async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.body;
+    const order = await prisma.order.findUnique({ where: { id: String(orderId || "") } });
+    if (!order) return res.status(404).json({ success: false, error: "Order not found" });
+    if (order.paymentStatus === "paid") {
+      return res.status(400).json({ success: false, error: "This order is already paid." });
+    }
+
+    const amount = toCents(order.totalPrice);
+
+    if (order.stripePaymentId?.startsWith("pi_")) {
+      const prev = await stripe.paymentIntents.retrieve(order.stripePaymentId);
+      if (prev.status !== "canceled" && prev.status !== "succeeded" && prev.amount === amount) {
+        return res.json({ success: true, clientSecret: prev.client_secret });
+      }
+    }
+
+    const intent = await stripe.paymentIntents.create({
+      amount,
+      currency: "aed",
+      payment_method_types: ["card"],
+      receipt_email: order.guestEmail || undefined,
+      metadata: { orderId: order.id },
+    });
+
+    await prisma.order.update({ where: { id: order.id }, data: { stripePaymentId: intent.id } });
+
+    res.json({ success: true, clientSecret: intent.client_secret });
+  } catch (error: any) {
+    console.error("Stripe PaymentIntent Error:", error);
+    res.status(500).json({ success: false, error: error?.message || "Failed to start card payment" });
+  }
+});
+
+// Embedded Stripe card form: confirm the PaymentIntent succeeded and fulfil the order.
+router.post("/verify-payment-intent", async (req: Request, res: Response) => {
+  try {
+    const { paymentIntentId } = req.body;
+    if (!paymentIntentId) return res.status(400).json({ success: false, error: "Missing payment id" });
+
+    const intent = await stripe.paymentIntents.retrieve(String(paymentIntentId));
+    const orderId = intent.metadata?.orderId;
+    if (intent.status !== "succeeded" || !orderId) {
+      return res.json({ success: false, message: "Payment not completed" });
+    }
+
+    const current = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!current || toCents(current.totalPrice) !== intent.amount) {
+      console.error(`Stripe amount mismatch for order ${orderId}: intent ${intent.amount}`);
+      return res.json({ success: false, message: "Payment amount does not match the order" });
+    }
+
+    const order = await fulfillStripeOrder(orderId, intent.id);
+    if (!order) return res.status(404).json({ success: false, error: "Order not found" });
+    res.json({ success: true, order });
+  } catch (err) {
+    console.error("Verify PaymentIntent Error", err);
+    res.status(500).json({ success: false, error: "Verification failed" });
+  }
+});
+
 // Verify Payment & Fulfill
 router.post("/verify-payment", async (req: Request, res: Response) => {
   try {
