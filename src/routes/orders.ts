@@ -4,6 +4,20 @@ import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
 import { sendMetaPurchase } from "./paymob.js";
+
+// The live storefront. Tracking (browser tags and the server Purchase) is for these hosts only.
+const LIVE_STOREFRONT_HOSTS = ["thewellnesslab.ae", "www.thewellnesslab.ae"];
+
+// True when the request came from a browser on another site (staging, previews, localhost).
+// No Origin (server-to-server, admin tools) counts as live, so those orders behave as before.
+function isTestStorefront(origin: unknown): boolean {
+  if (typeof origin !== "string" || !origin) return false;
+  try {
+    return !LIVE_STOREFRONT_HOSTS.includes(new URL(origin).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
 import { firstIp } from "../lib/metaCapi.js";
 import { priceOrder, toCents } from "../lib/orderPricing.js";
 import { verifyReservation } from "../lib/paymob.js";
@@ -546,6 +560,9 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
 
     const attr = req.body.attribution || {};
     const clip = (v: unknown, max = 500) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+    // Orders from staging / preview storefronts (Amplify, Netlify, localhost) never reach Meta: marking the
+    // Purchase as already sent (epoch 0) makes sendMetaPurchase skip them.
+    const fromTestSite = isTestStorefront(req.headers.origin);
 
     const order = await prisma.order.create({
       data: {
@@ -577,6 +594,7 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
         utmTerm: clip(attr.utmTerm),
         clientIp: clip(firstIp(req.headers["x-forwarded-for"]) || req.ip || req.socket?.remoteAddress, 64),
         clientUserAgent: clip(req.headers["user-agent"]),
+        ...(fromTestSite ? { metaPurchaseSentAt: new Date(0) } : {}),
         items: {
           create: items.map(
             (item: { productId: string; quantity: number; price: number }) => ({
