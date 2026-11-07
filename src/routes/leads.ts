@@ -4,6 +4,7 @@ import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js
 import { sendLeadNotificationEmail } from "../lib/email.js";
 import { attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
 import { ipFields } from "../lib/ipLocation.js";
+import { trackingFields } from "../lib/leadTracking.js";
 
 const router = Router();
 
@@ -122,14 +123,14 @@ router.delete("/statuses/:id", requireAuthOrApiKey, requireAdminOrApiKey, async 
 // Create a lead publicly (e.g., from Quiz)
 router.post("/public", async (req, res) => {
   try {
-    const { name, phone, email, source, city, quiz } = req.body;
+    const { name, phone, email, source, city, quiz, utmCampaign } = req.body;
     const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : undefined);
 
     if (!str(name, 120)) {
       return res.status(400).json({ success: false, error: "Name is required" });
     }
 
-    const extraFields = { ...(buildQuizFields(quiz) || {}), ...(await ipFields(req)) };
+    const extraFields = { ...(buildQuizFields(quiz) || {}), ...(await ipFields(req)), ...trackingFields(req, utmCampaign) };
 
     const lead = await prisma.lead.create({
       data: {

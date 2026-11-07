@@ -10,7 +10,7 @@ export const QUIZ_FIELDS = {
   eventId: "Quiz Event ID",
 } as const;
 
-const ANSWER_LABELS: Record<string, string> = {
+export const ANSWER_LABELS: Record<string, string> = {
   who: "Who Is It For",
   goal: "Goal",
   coverage: "Coverage",

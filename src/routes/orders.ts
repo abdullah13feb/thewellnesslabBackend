@@ -3,6 +3,7 @@ import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
+import { sendMetaPurchase } from "./paymob.js";
 import { firstIp } from "../lib/metaCapi.js";
 import { priceOrder, toCents } from "../lib/orderPricing.js";
 import { verifyReservation } from "../lib/paymob.js";
@@ -369,6 +370,11 @@ async function fulfillStripeOrder(orderId: string, paymentIntentId: string) {
   } catch (err) {
     console.error("Failed to send order notification email on Stripe payment:", err);
   }
+  try {
+    await sendMetaPurchase(order.id);
+  } catch (err) {
+    console.error("Meta CAPI Purchase error (Stripe):", err);
+  }
   return order;
 }
 
@@ -444,40 +450,9 @@ router.post("/verify-payment", async (req: Request, res: Response) => {
     if (session.payment_status === 'paid') {
       const orderId = session.metadata?.orderId;
       if (orderId) {
-        const order = await prisma.order.update({
-          where: { id: orderId },
-          data: {
-            paymentStatus: 'paid',
-            status: 'PROCESSING',
-            stripePaymentId: session.payment_intent as string
-          },
-          include: { items: { include: { product: true } } }
-        });
-        // Send Confirmation Email for Online Payment Success
-        try {
-          let userEmail = order.guestEmail;
-          if (!userEmail && order.userId) {
-            const user = await prisma.user.findUnique({ where: { id: order.userId } });
-            userEmail = user?.email || null;
-          }
-
-          if (userEmail) {
-            await sendOrderConfirmationEmail({
-              ...order,
-              userEmail
-            });
-          }
-        } catch (emailErr) {
-          console.error("Failed to send order confirmation email:", emailErr);
-        }
-
-        // Send Admin Order Notification Alert
-        try {
-          await sendOrderNotificationEmail(order);
-        } catch (err) {
-          console.error("Failed to send order notification email on verify-payment:", err);
-        }
-
+        // Runs once per order: a refreshed success page does not resend the emails or the Purchase.
+        const order = await fulfillStripeOrder(orderId, session.payment_intent as string);
+        if (!order) return res.status(404).json({ success: false, error: "Order not found" });
         return res.json({ success: true, order });
       }
     }

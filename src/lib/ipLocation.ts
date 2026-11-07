@@ -28,21 +28,28 @@ export async function ipFields(req: Request): Promise<Record<string, string>> {
   const ip = clientIpOf(req);
   if (!ip) return {};
   const out: Record<string, string> = { [IP_FIELDS.ip]: ip };
-  if (isPrivate(ip)) return out;
+  const { location, isp } = await lookupIp(ip);
+  if (location) out[IP_FIELDS.location] = location;
+  if (isp) out[IP_FIELDS.isp] = isp;
+  return out;
+}
+
+// Approximate location ("Dubai, United Arab Emirates") and provider for an IP, e.g. an order's clientIp.
+// Never throws; empty when the IP is private or the lookup fails or takes over 2.5 s.
+export async function lookupIp(ip: string): Promise<{ location?: string; isp?: string }> {
+  if (!ip || isPrivate(ip)) return {};
   try {
     const { data } = await axios.get(`http://ip-api.com/json/${encodeURIComponent(ip)}`, {
       params: { fields: "status,country,regionName,city,isp" },
       timeout: 2500,
     });
-    if (data?.status === "success") {
-      const place = [data.city, data.regionName, data.country]
-        .filter((v: unknown, i: number, a: unknown[]) => v && a.indexOf(v) === i)
-        .join(", ");
-      if (place) out[IP_FIELDS.location] = place;
-      if (data.isp) out[IP_FIELDS.isp] = String(data.isp).slice(0, 120);
-    }
+    if (data?.status !== "success") return {};
+    const place = [data.city, data.regionName, data.country]
+      .filter((v: unknown, i: number, a: unknown[]) => v && a.indexOf(v) === i)
+      .join(", ");
+    return { location: place || undefined, isp: data.isp ? String(data.isp).slice(0, 120) : undefined };
   } catch (err: any) {
     console.warn(`[IP location] lookup failed for ${ip}:`, err?.message || err);
+    return {};
   }
-  return out;
 }
