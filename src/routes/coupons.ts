@@ -83,16 +83,16 @@ router.post("/validate", async (req, res) => {
             });
 
             if (eligibleItems.length === 0) {
-                const readableNames = coupon.applicableProducts.map(p => {
-                    if (p.includes("pro")) return "Rex Pro";
-                    if (p.includes("core")) return "Rex Core";
-                    if (p.includes("ultra")) return "Rex Ultra";
-                    if (p.includes("prestige")) return "Rex Prestige";
-                    return p;
-                }).join(" & ");
+                // Product names from the database (e.g. "REX MINI"), so every product reads right, not only four.
+                const named = await prisma.product.findMany({
+                    where: { slug: { in: coupon.applicableProducts } },
+                    select: { slug: true, name: true },
+                });
+                const nameOf = new Map(named.map(p => [p.slug, p.name]));
+                const readableNames = coupon.applicableProducts.map(p => nameOf.get(p) || p).join(" & ");
 
                 return res.status(400).json({
-                    error: `Coupon ${coupon.code} is only applicable on ${readableNames}. Not applicable on Ultra or Prestige.`
+                    error: `Coupon ${coupon.code} is only applicable on ${readableNames}.`
                 });
             }
 
