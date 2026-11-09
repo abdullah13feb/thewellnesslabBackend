@@ -19,6 +19,13 @@ export const esc = (v: unknown) =>
 const text = (v: unknown) => (v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v).trim());
 const show = (v: unknown, empty = DASH) => (text(v) ? esc(text(v)) : empty);
 
+// Customer-facing order reference: TWL-10482. Orders without an order number fall back to the end of the
+// system id.
+export function orderRef(order: any): string {
+  const n = Number(order?.orderNumber);
+  return Number.isInteger(n) && n > 0 ? `TWL-${n}` : String(order?.id || "").slice(-6).toUpperCase();
+}
+
 export const money = (n: unknown) =>
   (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -300,7 +307,7 @@ function orderTracking(order: any, ip: { location?: string; isp?: string }) {
 
 export function orderAlertHtml(order: any, ip: { location?: string; isp?: string } = {}): string {
   const id = text(order?.id);
-  const shortId = id.slice(-6).toUpperCase();
+  const shortId = orderRef(order);
   const items: { name: string; qty: number; price: number; image: string }[] = (Array.isArray(order?.items) ? order.items : []).map((it: any) => ({
     name: text(it?.product?.name || it?.name) || "Product",
     qty: Number(it?.quantity) || 1,
