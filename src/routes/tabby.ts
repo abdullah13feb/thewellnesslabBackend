@@ -4,6 +4,9 @@ import prisma from "../lib/prisma.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
 import { sendMetaPurchase } from "./paymob.js";
 import { clearCart } from "../lib/cart.js";
+import { priceOrder } from "../lib/orderPricing.js";
+import rateLimit from "express-rate-limit";
+import { ClerkExpressWithAuth } from "@clerk/clerk-sdk-node";
 
 const router = Router();
 
@@ -30,6 +33,11 @@ const normalizePhone = (v: unknown) => {
   const digits = s.replace(/[^\d+]/g, "");
   return digits.replace(/\d/g, "").length > 1 || digits.replace(/\D/g, "").length < 7 ? undefined : digits;
 };
+
+// The merchant account is registered for the UAE only; Tabby rejects other countries' numbers on its page.
+const UAE_MOBILE = /^(?:\+971|00971|971|0)?5\d{8}$/;
+const isUaeMobile = (v: unknown) => UAE_MOBILE.test(normalizePhone(v) || "");
+const UAE_ONLY_MESSAGE = "Tabby is available for UAE phone numbers only";
 
 const phoneTail = (v: unknown) => (normalizePhone(v) || "").replace(/\D/g, "").slice(-9);
 
@@ -113,46 +121,81 @@ router.get("/config", (_req: Request, res: Response) => {
   res.json({ success: true, publicKey: TABBY_PUBLIC_KEY || null, merchantCode: TABBY_MERCHANT_CODE || null });
 });
 
+// Pre-scoring is limited per IP and per cart so the endpoint can't be used to look up phone numbers.
+const prescoreLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, error: "Too many requests" },
+});
+const prescoreCartLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 10,
+  keyGenerator: (req) => `cart:${String(req.body?.cartId || "")}`,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, error: "Too many requests" },
+});
+
 /**
- * Background pre-scoring: asks Tabby whether this shopper would be approved before they choose Tabby.
+ * Background pre-scoring of the shopper's own saved cart: the amount and items come from the cart and
+ * the catalog on the server, never from the request. A signed-in shopper's cart needs their session.
+ * The answer is only { available }; Tabby's rejection reason is not passed on.
  * Any error or timeout answers "available" so Tabby stays visible, as Tabby recommends.
  */
-router.post("/prescore", async (req: Request, res: Response) => {
-  const available = () => res.json({ success: true, available: true });
+router.post("/prescore", ClerkExpressWithAuth(), prescoreLimiter, prescoreCartLimiter, async (req: Request, res: Response) => {
+  const answer = (available: boolean) => res.json({ success: true, available });
   try {
-    if (!TABBY_SECRET_KEY || !TABBY_MERCHANT_CODE) return available();
-
-    const amount = Number(req.body?.amount);
+    const cartId = clean(req.body?.cartId);
     const email = clean(req.body?.email);
     const phone = normalizePhone(req.body?.phone);
-    if (!(amount > 0) || amount > 1_000_000 || !email || !phone) {
-      return res.status(400).json({ success: false, error: "amount, email and phone are required" });
+    if (!cartId || !email || !phone) {
+      return res.status(400).json({ success: false, error: "cartId, email and phone are required" });
     }
+    if (!isUaeMobile(phone)) return answer(false);
 
-    const items: any[] = Array.isArray(req.body?.items) ? req.body.items.slice(0, 50) : [];
-    const history = await buyerContext({ userId: req.auth?.userId, email, phone });
+    const userId = req.auth?.userId || null;
+    const isUserCart = cartId.startsWith("user_");
+    if (isUserCart && cartId !== userId) return res.status(403).json({ success: false, error: "Not your cart" });
+    if (!isUserCart && !cartId.startsWith("guest_")) return res.status(400).json({ success: false, error: "Invalid cart" });
+
+    const cart = await prisma.cart.findUnique({
+      where: isUserCart ? { userId: cartId } : { guestId: cartId },
+      include: { items: { include: { product: true } } },
+    });
+    if (!cart || cart.items.length === 0) return res.status(404).json({ success: false, error: "Cart is empty" });
+
+    if (!TABBY_SECRET_KEY || !TABBY_MERCHANT_CODE) return answer(true);
+
+    const priced = await priceOrder(
+      cart.items.map((it) => ({ productId: it.productId, quantity: it.quantity, price: it.price })),
+      clean(req.body?.couponCode)
+    );
+    if (!priced.ok) return res.status(priced.status).json({ success: false, error: priced.error });
+
+    const names = new Map(cart.items.map((it) => [it.productId, it.product]));
+    const history = await buyerContext({ userId, email, phone });
 
     const payload = {
       payment: {
-        amount: money(amount),
+        amount: money(priced.total),
         currency: "AED",
         buyer: compact({ email, phone, name: clean(req.body?.name) }),
-        ...(items.length
-          ? {
-              order: {
-                reference_id: `prescore-${Date.now()}`,
-                items: items.map((it) =>
-                  compact({
-                    reference_id: clean(String(it.productId ?? "")),
-                    title: clean(it.name) || "Item",
-                    quantity: Math.max(1, Number(it.quantity) || 1),
-                    unit_price: money(it.price),
-                    category: "Wellness",
-                  })
-                ),
-              },
-            }
-          : {}),
+        order: {
+          reference_id: `prescore-${cart.id}`,
+          shipping_amount: money(priced.shippingCharge),
+          discount_amount: money(priced.discount),
+          items: priced.items.map((it) =>
+            compact({
+              reference_id: it.productId,
+              title: names.get(it.productId)?.name || "Item",
+              quantity: it.quantity,
+              unit_price: money(it.price),
+              category: names.get(it.productId)?.category || "Wellness",
+            })
+          ),
+        },
         ...history,
       },
       lang: "en",
@@ -160,15 +203,10 @@ router.post("/prescore", async (req: Request, res: Response) => {
     };
 
     const { data } = await axios.post(`${TABBY_API}/api/v2/checkout`, payload, { headers: tabbyHeaders(), timeout: 8000 });
-
-    if (data?.status === "rejected") {
-      const reason = data?.configuration?.products?.installments?.rejection_reason;
-      return res.json({ success: true, available: false, reason: reason || "not_available", message: rejectionMessage(reason) });
-    }
-    return available();
+    return answer(data?.status !== "rejected");
   } catch (error: any) {
     console.error("Tabby pre-scoring error:", error?.response?.data || error.message || error);
-    return available();
+    return answer(true);
   }
 });
 
@@ -197,6 +235,9 @@ router.post("/create-checkout-session", async (req: Request, res: Response) => {
 
     const email = clean(order.guestEmail) || clean(order.user?.email);
     const phone = normalizePhone(order.guestPhone);
+    if (!isUaeMobile(phone)) {
+      return res.status(400).json({ success: false, rejected: true, reason: "not_uae_phone", error: UAE_ONLY_MESSAGE });
+    }
     const history = await buyerContext({ userId: order.userId, email, phone, excludeOrderId: order.id });
 
     const payload = {

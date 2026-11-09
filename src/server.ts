@@ -90,6 +90,9 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-API-Key"]
 }));
 
+// Behind the load balancer: req.ip is the visitor's address (used by rate limits), not the balancer's.
+app.set("trust proxy", 1);
+
 // Set express size limits to 50mb
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
