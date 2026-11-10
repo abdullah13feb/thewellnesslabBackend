@@ -59,7 +59,7 @@ export type MetaEvent = {
   event_name: string;
   event_id: string;
   event_time?: number;
-  action_source: "website" | "business_messaging" | "system_generated";
+  action_source: "website" | "business_messaging" | "chat" | "system_generated";
   messaging_channel?: "whatsapp";
   event_source_url?: string;
   user_data: Record<string, unknown>;

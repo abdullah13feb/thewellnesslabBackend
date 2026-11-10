@@ -7,6 +7,7 @@ import { sanitizeNotifyButtons } from "../lib/whatsappNotify.js";
 import { attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
 import { ipFields } from "../lib/ipLocation.js";
 import { trackingFields } from "../lib/leadTracking.js";
+import { sendWebsiteLead } from "../lib/metaLeads.js";
 
 const router = Router();
 
@@ -132,7 +133,7 @@ router.delete("/statuses/:id", requireAuthOrApiKey, requireAdminOrApiKey, async 
 // Create a lead publicly (e.g., from Quiz)
 router.post("/public", async (req, res) => {
   try {
-    const { name, phone, email, source, city, quiz, utmCampaign } = req.body;
+    const { name, phone, email, source, city, quiz, utmCampaign, meta } = req.body;
     const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : undefined);
 
     if (!str(name, 120)) {
@@ -160,6 +161,17 @@ router.post("/public", async (req, res) => {
       console.error("Failed to send lead notification email for public lead:", err);
     }
     await sendLeadNotificationWhatsapp(lead);
+
+    // Server copy of the browser pixel Lead (same event id, so Meta counts it once). Quiz test pages are skipped.
+    if (!quiz?.test) {
+      const m = meta && typeof meta === "object" ? meta : {};
+      await sendWebsiteLead(req, lead, {
+        eventId: m.eventId || quiz?.event_id,
+        fbp: m.fbp,
+        fbc: m.fbc,
+        page: m.page || quiz?.page,
+      });
+    }
 
     res.status(201).json({ success: true, data: lead });
   } catch (error) {

@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.js';
 import axios from 'axios';
 import { findCtwaClid, saveCtwaClick, sendWonLeadPurchase } from '../lib/metaLeadPurchase.js';
+import { sendWhatsappAdLead, sendWhatsappChatLead } from '../lib/metaLeads.js';
 
 export interface MetaAdCreative {
   id: string;
@@ -264,7 +265,10 @@ export const ctwaBackendService = {
 
     if (!innerPayload.is_from_me) {
       const ctwaClid = findCtwaClid(referral) || findCtwaClid(rawPayload);
-      if (ctwaClid) await saveCtwaClick(phoneNumber, ctwaClid, adId);
+      if (ctwaClid) {
+        await saveCtwaClick(phoneNumber, ctwaClid, adId);
+        await sendWhatsappAdLead(phoneNumber, String(innerPayload.chat_id || rawPhone));
+      }
     }
 
     // Find Creative Mapping matching adId or source_id or creativeName
@@ -1872,6 +1876,12 @@ export const ctwaBackendService = {
         });
       } catch (contactErr: any) {
         console.warn('[Wellness Contact Upsert Warning]:', contactErr.message);
+      }
+
+      // Meta Conversions API: ad chat -> LeadSubmitted (per ad click), any other new number -> Lead (chat).
+      if (!isFromMe) {
+        await sendWhatsappAdLead(phoneNumber, String(rawPhone));
+        await sendWhatsappChatLead({ rawPhone: phoneNumber, jid: String(rawPhone), messageLogId: log.id, customerName });
       }
 
       return log;

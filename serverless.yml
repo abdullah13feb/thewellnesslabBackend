@@ -88,6 +88,7 @@ provider:
     META_PIXEL_ID: ${env:META_PIXEL_ID, '1209564507911731'}
     META_TEST_EVENT_CODE: ${env:META_TEST_EVENT_CODE, ''}
     META_WABA_ID: ${env:META_WABA_ID, ''}
+    META_LEAD_EXCLUDE_PHONES: ${env:META_LEAD_EXCLUDE_PHONES, ''}
 
 custom:
   esbuild:

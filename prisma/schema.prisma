@@ -775,6 +775,10 @@ model WellnessLabContact {
   // Sale value in AED, sent to Meta as a Purchase when the lead is won
   dealValue      Float?
   metaPurchaseSentAt DateTime?
+  // Meta Conversions API lead events: when this contact was first sent as a Lead (chat or ad),
+  // and the last ad click id sent as LeadSubmitted (one per ad click)
+  metaLeadSentAt DateTime?
+  metaLeadClid   String   @default("")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

@@ -2,13 +2,14 @@ import { Router, Request, Response } from "express";
 import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
+import { sendWebsiteLead } from "../lib/metaLeads.js";
 
 const router = Router();
 
 // POST submit contact form
 router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
     try {
-        const { name, email, phone, subject, message } = req.body;
+        const { name, email, phone, subject, message, meta } = req.body;
 
         if (!name || !email || !message) {
             return res
@@ -26,6 +27,10 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
                 status: "NEW"
             },
         });
+
+        // Server copy of the browser pixel Lead (same event id, so Meta counts it once).
+        const m = meta && typeof meta === "object" ? meta : {};
+        await sendWebsiteLead(req, { ...contactSubmission, source: "Contact Form", city: null }, m);
 
         res.status(201).json({ success: true, data: contactSubmission, message: "Message sent successfully" });
     } catch (error) {
