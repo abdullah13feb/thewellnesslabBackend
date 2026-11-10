@@ -15,7 +15,11 @@ type WhatsappNotifyConfig = {
   // Tappable buttons under the alert (GOWA /send/interactive). Missing = on.
   whatsappCallButton?: boolean;
   whatsappLinkButton?: boolean;
+  // Button editor (admin portal). When present, replaces the two flags above.
+  whatsappButtons?: NotifyButton[];
 };
+
+export type NotifyButton = { type: "call" | "url" | "copy" | "reply"; label: string; value: string };
 
 const DEFAULT_DEVICE = "Wellnesslab";
 
@@ -49,17 +53,41 @@ function applyTemplate(template: string, values: Record<string, string>): string
   return out;
 }
 
-// Call-the-customer + open-in-CRM buttons, per config. Empty = plain text message.
-function buildButtons(config: WhatsappNotifyConfig, customerPhone: unknown, link: string, linkLabel: string): InteractiveButton[] {
+// Buttons configured in the admin portal. `value` may contain {{placeholders}} from the alert
+// values (phone, email, link, ...). A button whose resolved value is unusable (no phone on the
+// lead, not an http(s) URL, empty copy text) is skipped. No buttons = plain text message.
+function buildButtons(config: WhatsappNotifyConfig, values: Record<string, string>, linkLabel: string): InteractiveButton[] {
+  const specs: NotifyButton[] = Array.isArray(config.whatsappButtons)
+    ? config.whatsappButtons
+    : [
+        // Configs saved before the button editor existed.
+        ...(config.whatsappCallButton !== false ? [{ type: "call" as const, label: "📞 Call Customer", value: "{{phone}}" }] : []),
+        ...(config.whatsappLinkButton !== false ? [{ type: "url" as const, label: linkLabel, value: "{{link}}" }] : []),
+      ];
+
   const buttons: InteractiveButton[] = [];
-  const intl = phoneIntl(customerPhone);
-  if (config.whatsappCallButton !== false && intl.length >= 8) {
-    buttons.push({ name: "cta_call", params: { display_text: "📞 Call Customer", phone_number: `+${intl}` } });
-  }
-  if (config.whatsappLinkButton !== false && /^https?:\/\//.test(link)) {
-    buttons.push({ name: "cta_url", params: { display_text: linkLabel, url: link } });
-  }
-  return buttons;
+  specs.forEach((spec, i) => {
+    const label = String(spec?.label || "").trim();
+    const value = applyTemplate(String(spec?.value || ""), values).trim();
+    if (!label) return;
+    switch (spec.type) {
+      case "call": {
+        const intl = phoneIntl(value);
+        if (intl.length >= 8) buttons.push({ name: "cta_call", params: { display_text: label, phone_number: `+${intl}` } });
+        break;
+      }
+      case "url":
+        if (/^https?:\/\/\S+$/i.test(value)) buttons.push({ name: "cta_url", params: { display_text: label, url: value } });
+        break;
+      case "copy":
+        if (value && value !== "-") buttons.push({ name: "cta_copy", params: { display_text: label, copy_code: value } });
+        break;
+      case "reply":
+        buttons.push({ name: "quick_reply", params: { display_text: label, id: value || `btn_${i + 1}` } });
+        break;
+    }
+  });
+  return buttons.slice(0, 10);
 }
 
 async function dispatch(numbers: string[], message: string, deviceId: string, label: string, buttons: InteractiveButton[] = []) {
@@ -125,7 +153,7 @@ export const sendLeadNotificationWhatsapp = async (lead: any) => {
             `View leads: ${ADMIN_LEADS_URL}`,
           ].join("\n");
 
-    const buttons = buildButtons(config, lead.phone, ADMIN_LEADS_URL, "Open Leads");
+    const buttons = buildButtons(config, values, "Open Leads");
     await dispatch(numbers, message, config.whatsappDeviceId || DEFAULT_DEVICE, "Lead", buttons);
   } catch (error) {
     console.error("Error sending lead WhatsApp notification:", error);
@@ -184,9 +212,19 @@ export const sendOrderNotificationWhatsapp = async (order: any) => {
             `View orders: ${ADMIN_ORDERS_URL}`,
           ].join("\n");
 
-    const buttons = buildButtons(config, customerPhone === "-" ? "" : customerPhone, ADMIN_ORDERS_URL, "Open Orders");
+    const buttons = buildButtons(config, values, "Open Orders");
     await dispatch(numbers, message, config.whatsappDeviceId || DEFAULT_DEVICE, "Order", buttons);
   } catch (error) {
     console.error("Error sending order WhatsApp notification:", error);
   }
 };
+
+// Admin-portal button editor -> stored button specs (max 10, GOWA limit).
+export function sanitizeNotifyButtons(raw: unknown) {
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .filter((b: any) => b && ["call", "url", "copy", "reply"].includes(b.type))
+    .map((b: any) => ({ type: b.type, label: String(b.label || "").trim().slice(0, 25), value: String(b.value || "").trim().slice(0, 500) }))
+    .filter((b) => b.label)
+    .slice(0, 10);
+}

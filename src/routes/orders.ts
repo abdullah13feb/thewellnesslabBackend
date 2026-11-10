@@ -4,6 +4,7 @@ import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
 import { sendOrderNotificationWhatsapp } from "../lib/whatsappNotify.js";
+import { sanitizeNotifyButtons } from "../lib/whatsappNotify.js";
 import { sendMetaPurchase } from "./paymob.js";
 
 // The live storefront. Tracking (browser tags and the server Purchase) is for these hosts only.
@@ -66,7 +67,7 @@ router.get("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, as
 // Update order email notification configuration
 router.post("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
-    const { enabled, recipientEmails, emailSubject, whatsappEnabled, whatsappNumbers, whatsappDeviceId, whatsappMessage, whatsappCallButton, whatsappLinkButton } = req.body;
+    const { enabled, recipientEmails, emailSubject, whatsappEnabled, whatsappNumbers, whatsappDeviceId, whatsappMessage, whatsappCallButton, whatsappLinkButton, whatsappButtons } = req.body;
     const configValue = JSON.stringify({
       enabled: Boolean(enabled),
       recipientEmails: String(recipientEmails || "").trim(),
@@ -77,6 +78,7 @@ router.post("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, a
       whatsappMessage: String(whatsappMessage || "").trim(),
       whatsappCallButton: whatsappCallButton !== false,
       whatsappLinkButton: whatsappLinkButton !== false,
+      whatsappButtons: sanitizeNotifyButtons(whatsappButtons),
     });
 
     const setting = await prisma.setting.upsert({
