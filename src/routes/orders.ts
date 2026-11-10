@@ -66,7 +66,7 @@ router.get("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, as
 // Update order email notification configuration
 router.post("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
-    const { enabled, recipientEmails, emailSubject, whatsappEnabled, whatsappNumbers, whatsappDeviceId, whatsappMessage } = req.body;
+    const { enabled, recipientEmails, emailSubject, whatsappEnabled, whatsappNumbers, whatsappDeviceId, whatsappMessage, whatsappCallButton, whatsappLinkButton } = req.body;
     const configValue = JSON.stringify({
       enabled: Boolean(enabled),
       recipientEmails: String(recipientEmails || "").trim(),
@@ -75,6 +75,8 @@ router.post("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, a
       whatsappNumbers: String(whatsappNumbers || "").trim(),
       whatsappDeviceId: String(whatsappDeviceId || "Wellnesslab").trim(),
       whatsappMessage: String(whatsappMessage || "").trim(),
+      whatsappCallButton: whatsappCallButton !== false,
+      whatsappLinkButton: whatsappLinkButton !== false,
     });
 
     const setting = await prisma.setting.upsert({

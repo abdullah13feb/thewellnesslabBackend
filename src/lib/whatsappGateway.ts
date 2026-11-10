@@ -148,6 +148,60 @@ export async function sendWhatsappMessage(
   }
 }
 
+export type InteractiveButton =
+  | { name: "cta_call"; params: { display_text: string; phone_number: string } }
+  | { name: "cta_url"; params: { display_text: string; url: string } }
+  | { name: "cta_copy"; params: { display_text: string; copy_code: string } }
+  | { name: "quick_reply"; params: { display_text: string; id: string } };
+
+/**
+ * Send a message with tappable buttons via GOWA /send/interactive (experimental WhatsApp
+ * native-flow; rendering depends on the recipient's client). No OpenWA fallback here —
+ * callers fall back to sendWhatsappMessage on failure.
+ */
+export async function sendWhatsappInteractive(
+  toPhone: string,
+  body: string,
+  buttons: InteractiveButton[],
+  deviceId?: string,
+  footer?: string
+): Promise<{ success: boolean; error?: string }> {
+  const targetDevice = normalizeDeviceId(deviceId);
+  let formattedPhone = toPhone.replace(/\D/g, "");
+  if (formattedPhone.startsWith("0")) formattedPhone = formattedPhone.substring(1);
+  if (formattedPhone.length === 9 && formattedPhone.startsWith("5")) formattedPhone = "971" + formattedPhone;
+  const fullJid = `${formattedPhone}@s.whatsapp.net`;
+
+  // GOWA limits: body <= 4096 bytes, footer <= 256 bytes, 1-10 buttons.
+  const trimBytes = (s: string, max: number) => {
+    const buf = Buffer.from(s, "utf8");
+    return buf.length <= max ? s : buf.subarray(0, max - 3).toString("utf8").replace(/�+$/, "") + "...";
+  };
+  const url = `${GOWA_API_URL}/send/interactive`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: getGOWAHeaders(targetDevice),
+      body: JSON.stringify({
+        phone: fullJid,
+        body: trimBytes(body, 4096),
+        ...(footer ? { footer: trimBytes(footer, 256) } : {}),
+        buttons: buttons.slice(0, 10),
+      }),
+    });
+    if (res.ok) {
+      console.log(`✅ [GOWA EC2 Success] Interactive message accepted for ${fullJid}`);
+      return { success: true };
+    }
+    const errBody = await res.text();
+    console.warn(`⚠️ [GOWA EC2 interactive ${res.status}] ${errBody}`);
+    return { success: false, error: `GOWA interactive (Device: ${targetDevice}, Status ${res.status}): ${errBody}` };
+  } catch (err: any) {
+    console.error(`❌ [GOWA EC2 interactive Fetch Error]:`, err.message);
+    return { success: false, error: `GOWA Connection Error (${url}): ${err.message}` };
+  }
+}
+
 /**
  * Fetch all sessions from the OpenWA server / GOWA devices
  */

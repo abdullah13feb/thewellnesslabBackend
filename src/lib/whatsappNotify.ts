@@ -3,7 +3,7 @@
 // the whatsapp* fields, managed from the admin portal's notification dialogs.
 
 import prisma from "./prisma.js";
-import { sendWhatsappMessage } from "./whatsappGateway.js";
+import { sendWhatsappMessage, sendWhatsappInteractive, type InteractiveButton } from "./whatsappGateway.js";
 import { orderRef, money, gstTime, phoneIntl, ADMIN_LEADS_URL, ADMIN_ORDERS_URL } from "./alertEmails.js";
 import { suggestedProductOf } from "./quizLead.js";
 
@@ -12,6 +12,9 @@ type WhatsappNotifyConfig = {
   whatsappNumbers?: string;
   whatsappDeviceId?: string;
   whatsappMessage?: string;
+  // Tappable buttons under the alert (GOWA /send/interactive). Missing = on.
+  whatsappCallButton?: boolean;
+  whatsappLinkButton?: boolean;
 };
 
 const DEFAULT_DEVICE = "Wellnesslab";
@@ -46,9 +49,30 @@ function applyTemplate(template: string, values: Record<string, string>): string
   return out;
 }
 
-async function dispatch(numbers: string[], message: string, deviceId: string, label: string) {
+// Call-the-customer + open-in-CRM buttons, per config. Empty = plain text message.
+function buildButtons(config: WhatsappNotifyConfig, customerPhone: unknown, link: string, linkLabel: string): InteractiveButton[] {
+  const buttons: InteractiveButton[] = [];
+  const intl = phoneIntl(customerPhone);
+  if (config.whatsappCallButton !== false && intl.length >= 8) {
+    buttons.push({ name: "cta_call", params: { display_text: "📞 Call Customer", phone_number: `+${intl}` } });
+  }
+  if (config.whatsappLinkButton !== false && /^https?:\/\//.test(link)) {
+    buttons.push({ name: "cta_url", params: { display_text: linkLabel, url: link } });
+  }
+  return buttons;
+}
+
+async function dispatch(numbers: string[], message: string, deviceId: string, label: string, buttons: InteractiveButton[] = []) {
   for (const number of numbers) {
     try {
+      if (buttons.length > 0) {
+        const interactive = await sendWhatsappInteractive(number, message, buttons, deviceId);
+        if (interactive.success) {
+          console.log(`${label} WhatsApp interactive notification sent to ${number} via ${deviceId}`);
+          continue;
+        }
+        console.warn(`${label} WhatsApp interactive to ${number} failed, falling back to text:`, interactive.error);
+      }
       const result = await sendWhatsappMessage("default", number, message, deviceId);
       if (result.success) {
         console.log(`${label} WhatsApp notification sent to ${number} via ${deviceId}`);
@@ -101,7 +125,8 @@ export const sendLeadNotificationWhatsapp = async (lead: any) => {
             `View leads: ${ADMIN_LEADS_URL}`,
           ].join("\n");
 
-    await dispatch(numbers, message, config.whatsappDeviceId || DEFAULT_DEVICE, "Lead");
+    const buttons = buildButtons(config, lead.phone, ADMIN_LEADS_URL, "Open Leads");
+    await dispatch(numbers, message, config.whatsappDeviceId || DEFAULT_DEVICE, "Lead", buttons);
   } catch (error) {
     console.error("Error sending lead WhatsApp notification:", error);
   }
@@ -159,7 +184,8 @@ export const sendOrderNotificationWhatsapp = async (order: any) => {
             `View orders: ${ADMIN_ORDERS_URL}`,
           ].join("\n");
 
-    await dispatch(numbers, message, config.whatsappDeviceId || DEFAULT_DEVICE, "Order");
+    const buttons = buildButtons(config, customerPhone === "-" ? "" : customerPhone, ADMIN_ORDERS_URL, "Open Orders");
+    await dispatch(numbers, message, config.whatsappDeviceId || DEFAULT_DEVICE, "Order", buttons);
   } catch (error) {
     console.error("Error sending order WhatsApp notification:", error);
   }
