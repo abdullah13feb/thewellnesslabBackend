@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import prisma from "../lib/prisma.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
+import { sendOrderNotificationWhatsapp } from "../lib/whatsappNotify.js";
 import { sendMetaPurchase } from "./paymob.js";
 import { clearCart } from "../lib/cart.js";
 import { priceOrder } from "../lib/orderPricing.js";
@@ -387,6 +388,7 @@ async function processTabbyPayment(paymentId: string, expectedOrderId?: string) 
       } catch (err) {
         console.error("Failed to send admin notification email for Tabby order:", err);
       }
+      await sendOrderNotificationWhatsapp(updated);
       try {
         await sendMetaPurchase(orderId);
       } catch (err) {

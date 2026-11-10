@@ -3,6 +3,7 @@ import { ApiResponse } from "../types/index.js";
 import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
+import { sendOrderNotificationWhatsapp } from "../lib/whatsappNotify.js";
 import { sendMetaPurchase } from "./paymob.js";
 
 // The live storefront. Tracking (browser tags and the server Purchase) is for these hosts only.
@@ -65,11 +66,15 @@ router.get("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, as
 // Update order email notification configuration
 router.post("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
-    const { enabled, recipientEmails, emailSubject } = req.body;
+    const { enabled, recipientEmails, emailSubject, whatsappEnabled, whatsappNumbers, whatsappDeviceId, whatsappMessage } = req.body;
     const configValue = JSON.stringify({
       enabled: Boolean(enabled),
       recipientEmails: String(recipientEmails || "").trim(),
       emailSubject: String(emailSubject || "").trim(),
+      whatsappEnabled: Boolean(whatsappEnabled),
+      whatsappNumbers: String(whatsappNumbers || "").trim(),
+      whatsappDeviceId: String(whatsappDeviceId || "Wellnesslab").trim(),
+      whatsappMessage: String(whatsappMessage || "").trim(),
     });
 
     const setting = await prisma.setting.upsert({
@@ -384,6 +389,7 @@ async function fulfillStripeOrder(orderId: string, paymentIntentId: string) {
   } catch (err) {
     console.error("Failed to send order notification email on Stripe payment:", err);
   }
+  await sendOrderNotificationWhatsapp(order);
   try {
     await sendMetaPurchase(order.id);
   } catch (err) {
@@ -643,6 +649,7 @@ router.post("/", async (req: Request, res: Response<ApiResponse<any>>) => {
     } catch (err) {
       console.error("Failed to send order notification email on order create:", err);
     }
+    await sendOrderNotificationWhatsapp(order);
 
     res.status(201).json({
       success: true,

@@ -2,6 +2,7 @@ import { Router } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js";
 import { sendLeadNotificationEmail } from "../lib/email.js";
+import { sendLeadNotificationWhatsapp } from "../lib/whatsappNotify.js";
 import { attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
 import { ipFields } from "../lib/ipLocation.js";
 import { trackingFields } from "../lib/leadTracking.js";
@@ -36,11 +37,15 @@ router.get("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, as
 // Update lead email notification configuration
 router.post("/notification-config", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
-    const { enabled, recipientEmails, emailSubject } = req.body;
+    const { enabled, recipientEmails, emailSubject, whatsappEnabled, whatsappNumbers, whatsappDeviceId, whatsappMessage } = req.body;
     const configValue = JSON.stringify({
       enabled: Boolean(enabled),
       recipientEmails: String(recipientEmails || "").trim(),
       emailSubject: String(emailSubject || "").trim(),
+      whatsappEnabled: Boolean(whatsappEnabled),
+      whatsappNumbers: String(whatsappNumbers || "").trim(),
+      whatsappDeviceId: String(whatsappDeviceId || "Wellnesslab").trim(),
+      whatsappMessage: String(whatsappMessage || "").trim(),
     });
 
     const setting = await prisma.setting.upsert({
@@ -150,6 +155,7 @@ router.post("/public", async (req, res) => {
     } catch (err) {
       console.error("Failed to send lead notification email for public lead:", err);
     }
+    await sendLeadNotificationWhatsapp(lead);
 
     res.status(201).json({ success: true, data: lead });
   } catch (error) {
@@ -187,6 +193,7 @@ router.post("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => 
     } catch (err) {
       console.error("Failed to send lead notification email for admin lead:", err);
     }
+    await sendLeadNotificationWhatsapp(lead);
 
     res.status(201).json({ success: true, data: lead });
   } catch (error) {

@@ -3,6 +3,7 @@ import axios from "axios";
 import crypto from "crypto";
 import prisma from "../lib/prisma.js";
 import { sendOrderConfirmationEmail, sendOrderNotificationEmail } from "../lib/email.js";
+import { sendOrderNotificationWhatsapp } from "../lib/whatsappNotify.js";
 import { sendMetaEvent, userData, contentId } from "../lib/metaCapi.js";
 import { priceOrder, toCents } from "../lib/orderPricing.js";
 import { checkPaymobTransaction, signReservation } from "../lib/paymob.js";
@@ -399,6 +400,7 @@ async function fulfillPaymobOrder(orderId: string, transactionId?: string, paymo
       } catch (err) {
         console.error("Failed to send admin notification email for Paymob order:", err);
       }
+      await sendOrderNotificationWhatsapp(updatedOrder);
 
       return updatedOrder;
     }
