@@ -42,13 +42,15 @@ export type Customer = {
 // Customer details as Meta's hashed user_data fields.
 export function userData(c: Customer) {
   const { first, last } = splitName(c.name);
+  const phone = normPhone(c.phone);
   const data: Record<string, unknown> = {
     em: hashed(normEmail(c.email)),
-    ph: hashed(normPhone(c.phone)),
+    ph: hashed(phone),
     fn: hashed(normText(first)),
     ln: hashed(normText(last)),
     ct: hashed(normText(c.city)),
-    country: hashed("ae"),
+    // UAE for +971 numbers (and customers without a phone); a foreign number gets no country rather than a wrong one.
+    country: !phone || phone.startsWith("971") ? hashed("ae") : undefined,
     external_id: hashed((c.externalId || "").trim()),
   };
   for (const k of Object.keys(data)) if (data[k] === undefined) delete data[k];

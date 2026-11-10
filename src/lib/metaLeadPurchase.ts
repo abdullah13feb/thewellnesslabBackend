@@ -33,17 +33,26 @@ export async function saveCtwaClick(rawPhone: string, ctwaClid: string, adId?: s
   }
 }
 
-// Conversions API Purchase for a won WhatsApp lead, sent once per contact. Needs the ad click id
-// (only leads that came from a Click to WhatsApp ad have one), a deal value and META_WABA_ID.
+// Conversions API Purchase for a won WhatsApp lead (sales team sets Closed Deal + deal value), sent once per contact.
+// Chats from a Click to WhatsApp ad go as business_messaging with the ad click id when META_WABA_ID is set
+// (credited to the exact ad); every other won chat goes as action_source "chat" with the hashed phone, so Meta
+// matches the sale to the same person who was sent as a WhatsApp Lead.
 export async function sendWonLeadPurchase(phoneNumber: string) {
   const contact = await prisma.wellnessLabContact.findUnique({ where: { phoneNumber } });
   if (!contact || !WON_STATUSES.includes(contact.leadStatus) || contact.metaPurchaseSentAt) return;
-  if (!contact.ctwaClid || !contact.dealValue || contact.dealValue <= 0) return;
+  if (!contact.dealValue || contact.dealValue <= 0) return;
 
-  const waba = (process.env.META_WABA_ID || "").trim();
-  if (!waba) {
-    console.warn(`[Meta CAPI] META_WABA_ID is not set; WhatsApp Purchase for ${phoneNumber} not sent`);
-    return;
+  // Paid on the website in the last 30 days: that sale already reached Meta as a website Purchase.
+  const last9 = phoneNumber.replace(/\D/g, "").slice(-9);
+  if (last9.length === 9) {
+    const webOrder = await prisma.order.findFirst({
+      where: { paymentStatus: "paid", guestPhone: { contains: last9 }, createdAt: { gte: new Date(Date.now() - 30 * 86400000) } },
+      select: { id: true },
+    });
+    if (webOrder) {
+      console.log(`[Meta CAPI] WhatsApp Purchase for ${phoneNumber} not sent: paid website order ${webOrder.id} already sent`);
+      return;
+    }
   }
 
   const claim = await prisma.wellnessLabContact.updateMany({
@@ -58,15 +67,26 @@ export async function sendWonLeadPurchase(phoneNumber: string) {
     name: contact.customerName !== "WhatsApp Customer" ? contact.customerName : "",
     city: contact.city,
   });
+  const custom_data = { currency: "AED", value: contact.dealValue, content_category: "whatsapp_deal" };
 
-  const ok = await sendMetaEvent({
-    event_name: "Purchase",
-    event_id: `wa-${contact.id}`,
-    action_source: "business_messaging",
-    messaging_channel: "whatsapp",
-    user_data: { ...user, whatsapp_business_account_id: waba, ctwa_clid: contact.ctwaClid },
-    custom_data: { currency: "AED", value: contact.dealValue },
-  });
+  const waba = (process.env.META_WABA_ID || "").trim();
+  const ok =
+    waba && contact.ctwaClid
+      ? await sendMetaEvent({
+          event_name: "Purchase",
+          event_id: `wa-${contact.id}`,
+          action_source: "business_messaging",
+          messaging_channel: "whatsapp",
+          user_data: { ...user, whatsapp_business_account_id: waba, ctwa_clid: contact.ctwaClid },
+          custom_data,
+        })
+      : await sendMetaEvent({
+          event_name: "Purchase",
+          event_id: `wa-${contact.id}`,
+          action_source: "chat",
+          user_data: user,
+          custom_data,
+        });
 
   if (!ok) {
     await prisma.wellnessLabContact.update({ where: { phoneNumber }, data: { metaPurchaseSentAt: null } });

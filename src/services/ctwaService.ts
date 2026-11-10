@@ -2123,7 +2123,7 @@ export const ctwaBackendService = {
         },
       });
 
-      // A won lead from a Click to WhatsApp ad becomes a Purchase in Meta (once, when it has a value).
+      // Closed Deal / Won with a deal value becomes a Purchase in Meta (once per contact).
       try {
         await sendWonLeadPurchase(formattedPhone);
       } catch (metaErr: any) {
