@@ -9,6 +9,7 @@ import { ipFields } from "../lib/ipLocation.js";
 import { trackingFields } from "../lib/leadTracking.js";
 import { sendWebsiteLead } from "../lib/metaLeads.js";
 import { WA_PHONE_KEY } from "../lib/whatsappLead.js";
+import { getCtwaAds } from "../lib/ctwaAds.js";
 import { ctwaBackendService } from "../services/ctwaService.js";
 
 const router = Router();
@@ -253,6 +254,18 @@ router.get("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error("Error fetching leads:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
+
+// Meta ad details (name, campaign, ad set, status, text, banner) for Click-to-WhatsApp ad ids: ?ids=1,2&refresh=1
+router.get("/ctwa-ads", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
+  try {
+    const ids = String(req.query.ids || "").split(",").filter(Boolean).slice(0, 100);
+    const data = await getCtwaAds(ids, { refresh: req.query.refresh === "1" });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Error fetching CTWA ads:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 });
