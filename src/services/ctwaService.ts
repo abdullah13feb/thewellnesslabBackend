@@ -2,6 +2,7 @@ import prisma from '../lib/prisma.js';
 import axios from 'axios';
 import { findCtwaClid, saveCtwaClick, sendWonLeadPurchase } from '../lib/metaLeadPurchase.js';
 import { sendWhatsappAdLead, sendWhatsappChatLead } from '../lib/metaLeads.js';
+import { syncContactToLead, upsertWhatsappLead } from '../lib/whatsappLead.js';
 
 export interface MetaAdCreative {
   id: string;
@@ -1878,6 +1879,20 @@ export const ctwaBackendService = {
         console.warn('[Wellness Contact Upsert Warning]:', contactErr.message);
       }
 
+      // Every incoming chat is also a lead in the Lead table (created on the first message).
+      if (!isFromMe) {
+        const referral = innerPayload.referral || rawPayload.referral || {};
+        const ctwaClid = findCtwaClid(rawPayload);
+        await upsertWhatsappLead({
+          phone: phoneNumber,
+          customerName,
+          message: messageText,
+          adId: ctwaClid ? String(referral.source_id || referral.ref || '') : '',
+          ctwaClid,
+          referral: ctwaClid ? referral : undefined,
+        });
+      }
+
       // Meta Conversions API: ad chat -> LeadSubmitted (per ad click), any other new number -> Lead (chat).
       if (!isFromMe) {
         await sendWhatsappAdLead(phoneNumber, String(rawPhone));
@@ -2129,6 +2144,9 @@ export const ctwaBackendService = {
       } catch (metaErr: any) {
         console.error('[Meta CAPI WhatsApp Purchase Error]:', metaErr.message);
       }
+
+      // Keep the matching lead (Lead table) in step with the WhatsApp inbox.
+      await syncContactToLead(formattedPhone, updated);
 
       return { success: true, contact: updated };
     } catch (err: any) {

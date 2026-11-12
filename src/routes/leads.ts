@@ -8,6 +8,8 @@ import { attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
 import { ipFields } from "../lib/ipLocation.js";
 import { trackingFields } from "../lib/leadTracking.js";
 import { sendWebsiteLead } from "../lib/metaLeads.js";
+import { WA_PHONE_KEY } from "../lib/whatsappLead.js";
+import { ctwaBackendService } from "../services/ctwaService.js";
 
 const router = Router();
 
@@ -230,6 +232,11 @@ router.get("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     if (email) {
       where.email = email as string;
     }
+    // Live polling: only leads created or changed after this time.
+    const since = req.query.since ? new Date(String(req.query.since)) : null;
+    if (since && !isNaN(since.getTime())) {
+      where.updatedAt = { gt: since };
+    }
 
     const leads = await prisma.lead.findMany({
       where,
@@ -246,6 +253,37 @@ router.get("/", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error("Error fetching leads:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
+
+// WhatsApp conversation of a WhatsApp lead (newest last). Empty for website leads.
+router.get("/:id/messages", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) {
+      return res.status(404).json({ success: false, error: "Lead not found" });
+    }
+    const phone = (lead.dynamicFields as any)?.[WA_PHONE_KEY];
+    if (!phone) {
+      return res.json({ success: true, data: [] });
+    }
+    const take = Math.min(Number(req.query.limit) || 100, 500);
+    const [messages, contact] = await Promise.all([
+      prisma.wellnessLabMessageLog.findMany({
+        where: { phoneNumber: String(phone) },
+        orderBy: { createdAt: "desc" },
+        take,
+        select: { id: true, direction: true, messageContent: true, mediaUrl: true, mediaType: true, status: true, createdAt: true },
+      }),
+      prisma.wellnessLabContact.findUnique({
+        where: { phoneNumber: String(phone) },
+        select: { customerName: true, leadStatus: true, tags: true, notes: true, dealValue: true, adId: true, ctwaClickedAt: true },
+      }),
+    ]);
+    res.json({ success: true, data: messages.reverse(), contact });
+  } catch (error) {
+    console.error("Error fetching lead messages:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 });
@@ -280,7 +318,21 @@ router.get("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) =
 router.patch("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, name, phone, email, source, company, jobTitle, city, dynamicFields, whatsappSent, emailSent, whatsappSentAt, emailSentAt } = req.body;
+    const { status, name, phone, email, source, company, jobTitle, city, whatsappSent, emailSent, whatsappSentAt, emailSentAt, notes, dealValue } = req.body;
+    let { dynamicFields } = req.body;
+
+    // notes / dealValue are merged into dynamicFields (the Lead table has no columns for them).
+    if (notes !== undefined || dealValue !== undefined) {
+      const current = await prisma.lead.findUnique({ where: { id }, select: { dynamicFields: true } });
+      const merged: Record<string, any> = { ...((current?.dynamicFields as any) || {}), ...(dynamicFields || {}) };
+      if (notes !== undefined) merged["Notes"] = String(notes ?? "").slice(0, 5000);
+      if (dealValue !== undefined) {
+        const v = Number(dealValue);
+        if (v > 0) merged["Deal Value (AED)"] = v;
+        else delete merged["Deal Value (AED)"];
+      }
+      dynamicFields = merged;
+    }
 
     const lead = await prisma.lead.update({
       where: { id },
@@ -300,6 +352,18 @@ router.patch("/:id", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res)
         emailSentAt: emailSentAt ? new Date(emailSentAt) : undefined,
       },
     });
+
+    // WhatsApp lead: mirror status / name / deal value / notes onto the WhatsApp contact, which also sends
+    // the Meta Purchase when the lead is Won with a deal value.
+    const waPhone = (lead.dynamicFields as any)?.[WA_PHONE_KEY];
+    if (waPhone && (status !== undefined || name !== undefined || dealValue !== undefined || notes !== undefined)) {
+      await ctwaBackendService.updateWellnessContact(String(waPhone), {
+        leadStatus: status,
+        customerName: name,
+        notes,
+        dealValue: dealValue === undefined ? undefined : Number(dealValue) > 0 ? Number(dealValue) : null,
+      });
+    }
 
     res.json({ success: true, data: lead });
   } catch (error) {
