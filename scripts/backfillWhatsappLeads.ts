@@ -10,7 +10,53 @@ import { contactStatusToLead, findWhatsappLead, upsertWhatsappLead } from "../sr
 const APPLY = process.argv.includes("--apply");
 const OWN_NUMBERS = ["971559206585", "971585865195"];
 
+// Customer messages that reached only ctwaMessageLog (main /api/ctwa/webhook without a bot flow) and never the
+// Wellness inbox log: copy them over and make sure each number has an inbox contact. Only messages newer than
+// the last incoming message already in the inbox log are copied, so nothing is duplicated.
+async function recoverCtwaOnlyMessages() {
+  const lastInbox = await prisma.wellnessLabMessageLog.findFirst({ where: { direction: "Incoming" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+  const after = lastInbox?.createdAt || new Date(0);
+  const msgs = await prisma.ctwaMessageLog.findMany({ where: { direction: "Incoming", createdAt: { gt: after } }, orderBy: { createdAt: "asc" } });
+  const phones = new Map<string, { name?: string }>();
+  for (const m of msgs) {
+    const phone = m.phoneNumber.replace(/\D/g, "");
+    if (!phone || OWN_NUMBERS.includes(phone)) continue;
+    const name = m.customerName && m.customerName !== "WhatsApp Customer" ? m.customerName : undefined;
+    phones.set(phone, { name: name || phones.get(phone)?.name });
+  }
+  console.log(`Inbox log is missing ${msgs.length} customer messages since ${after.toISOString()} from ${phones.size} numbers.`);
+  if (!APPLY) return;
+  for (let i = 0; i < msgs.length; i += 200) {
+    await prisma.wellnessLabMessageLog.createMany({
+      data: msgs.slice(i, i + 200).map((m) => ({
+        timestamp: m.timestamp,
+        phoneNumber: m.phoneNumber.replace(/\D/g, ""),
+        customerName: m.customerName,
+        direction: "Incoming",
+        messageContent: m.messageContent,
+        adId: m.adId,
+        creativeName: m.creativeName,
+        flowName: m.flowName,
+        nodeId: m.nodeId,
+        nodeLabel: m.nodeLabel,
+        status: "Received",
+        deviceId: process.env.GOWA_DEVICE_ID || "adil",
+        createdAt: m.createdAt,
+      })),
+    });
+  }
+  for (const [phone, { name }] of phones) {
+    await prisma.wellnessLabContact.upsert({
+      where: { phoneNumber: phone },
+      update: name ? { customerName: name } : {},
+      create: { phoneNumber: phone, customerName: name || "WhatsApp Customer", leadStatus: "NEW_LEAD", tags: [], notes: "", email: "", city: "" },
+    });
+  }
+  console.log(`Copied ${msgs.length} messages and made sure ${phones.size} numbers have an inbox contact.`);
+}
+
 async function main() {
+  await recoverCtwaOnlyMessages();
   const contacts = await prisma.wellnessLabContact.findMany({ orderBy: { createdAt: "asc" } });
   let created = 0;
   let skipped = 0;

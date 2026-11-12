@@ -270,6 +270,29 @@ export const ctwaBackendService = {
         await saveCtwaClick(phoneNumber, ctwaClid, adId);
         await sendWhatsappAdLead(phoneNumber, String(innerPayload.chat_id || rawPhone));
       }
+
+      // Every customer chat is a lead (Lead table) and a contact in the WhatsApp inbox.
+      const waPhone = String(phoneNumber).replace(/\D/g, '');
+      const realName = customerName && !['WhatsApp Customer', 'The Wellness Lab', 'Urban Sauna'].includes(customerName) ? customerName : undefined;
+      if (waPhone && !['971559206585', '971585865195'].includes(waPhone)) {
+        try {
+          await prisma.wellnessLabContact.upsert({
+            where: { phoneNumber: waPhone },
+            update: { ...(realName ? { customerName: realName } : {}), updatedAt: new Date() },
+            create: { phoneNumber: waPhone, customerName: realName || 'WhatsApp Customer', leadStatus: 'NEW_LEAD', tags: [], notes: '', email: '', city: '' },
+          });
+        } catch (contactErr: any) {
+          console.warn('[CTWA Webhook contact upsert warning]:', contactErr.message);
+        }
+        await upsertWhatsappLead({
+          phone: waPhone,
+          customerName: realName,
+          message: messageText,
+          adId: ctwaClid ? adId : '',
+          ctwaClid,
+          referral: ctwaClid ? referral : undefined,
+        });
+      }
     }
 
     // Find Creative Mapping matching adId or source_id or creativeName
@@ -402,6 +425,23 @@ export const ctwaBackendService = {
             nodeId: 'human_incoming',
             nodeLabel: 'Human Chat / No Bot',
             status: 'Received',
+          },
+        });
+        // Also in the Wellness Lab inbox log, so the chat (and the lead's chat history) shows the customer's side.
+        await prisma.wellnessLabMessageLog.create({
+          data: {
+            timestamp: timeStr,
+            phoneNumber: String(phoneNumber).replace(/\D/g, ''),
+            customerName: customerName !== 'WhatsApp Customer' ? customerName : lastLog?.customerName || 'WhatsApp Customer',
+            direction: 'Incoming',
+            messageContent: messageText,
+            adId: adId || lastLog?.adId || '',
+            creativeName: creativeName || lastLog?.creativeName || '',
+            flowName: 'Direct Chat',
+            nodeId: 'human_incoming',
+            nodeLabel: 'Human Chat / No Bot',
+            status: 'Received',
+            deviceId: process.env.GOWA_DEVICE_ID || 'adil',
           },
         });
       } catch (e: any) {
