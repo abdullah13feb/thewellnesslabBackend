@@ -5,6 +5,7 @@
 import { ANSWER_LABELS, QUIZ_FIELDS } from "./quizLead.js";
 import { IP_FIELDS } from "./ipLocation.js";
 import { TRACKING_FIELDS, deviceOf } from "./leadTracking.js";
+import { isPassportCode } from "./passport.js";
 
 const ADMIN_URL = (process.env.ADMIN_URL || "https://crm.thewellnesslab.ae").replace(/\/+$/, "");
 export const ADMIN_LEADS_URL = `${ADMIN_URL}/leads`;
@@ -407,6 +408,11 @@ export function orderAlertHtml(order: any, ip: { location?: string; isp?: string
         discount > 0
           ? `
       <tr><td>Discount${order?.couponCode ? ` (${esc(order.couponCode)})` : ""}</td><td align="right" style="color:#1A7F43;">&minus;AED ${money(discount)}</td></tr>`
+          : ""
+      }${
+        isPassportCode(order?.couponCode)
+          ? `
+      <tr><td style="color:#C8102E;font-weight:600;">Add a free REX MINI (Recovery Passport)</td><td align="right" style="color:#1A7F43;">Free</td></tr>`
           : ""
       }
       <tr><td>VAT 5% (included)</td><td align="right" style="color:#1C1C1E;">AED ${money(vat)}</td></tr>

@@ -1,5 +1,6 @@
 import prisma from "./prisma.js";
 import { linePrice, lineQuantity } from "./pricing.js";
+import { isPassportCode, passportCodeUsed } from "./passport.js";
 
 export type PricedLine = { productId: string; quantity: number; price: number; [k: string]: any };
 
@@ -64,7 +65,10 @@ export async function priceOrder(requestedItems: any, couponCode?: string | null
     });
 
     if (coupon) {
-      const isExpired = coupon.expiry && new Date(coupon.expiry) < new Date();
+      // Recovery Passport codes are single use.
+      const isExpired =
+        (coupon.expiry && new Date(coupon.expiry) < new Date()) ||
+        (isPassportCode(coupon.code) && (await passportCodeUsed(coupon.code)));
       const meetsMinPurchase = subtotal >= coupon.minPurchase;
 
       if (!isExpired && meetsMinPurchase) {

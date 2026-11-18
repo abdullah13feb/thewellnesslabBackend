@@ -4,12 +4,26 @@ import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js
 import { sendLeadNotificationEmail } from "../lib/email.js";
 import { sendLeadNotificationWhatsapp } from "../lib/whatsappNotify.js";
 import { sanitizeNotifyButtons } from "../lib/whatsappNotify.js";
-import { attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
+import { QUIZ_FIELDS, attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
 import { ipFields } from "../lib/ipLocation.js";
 import { trackingFields } from "../lib/leadTracking.js";
 import { sendWebsiteLead } from "../lib/metaLeads.js";
 import { WA_PHONE_KEY } from "../lib/whatsappLead.js";
 import { getCtwaAds } from "../lib/ctwaAds.js";
+import {
+  PASSPORT_GOALS,
+  PASSPORT_OFFER,
+  PASSPORT_SOURCE,
+  PASSPORT_STATIONS,
+  PASSPORT_VALID_UNTIL,
+  PASSPORT_VALID_UNTIL_LABEL,
+  PassportGoal,
+  isPassportGoal,
+  newPassportCode,
+  panelForGoal,
+  passportCodeUsed,
+  passportCouponDescription,
+} from "../lib/passport.js";
 import { ctwaBackendService } from "../services/ctwaService.js";
 
 const router = Router();
@@ -180,6 +194,151 @@ router.post("/public", async (req, res) => {
   } catch (error) {
     console.error("Error creating public lead:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
+
+// Recovery Passport quiz (/recovery-passport): saves the lead with source "quiz map" and gives the person
+// their own single-use coupon for the panel the quiz recommended. The same person (email or phone) taking
+// the quiz again keeps their code, moved to their latest result, so a retake never makes a second coupon.
+router.post("/passport", async (req, res) => {
+  try {
+    const { name, phone, email, gender, goal, station, test, page, utmCampaign, meta } = req.body || {};
+    const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().replace(/\s+/g, " ").slice(0, max) : "");
+
+    const fullName = str(name, 120);
+    const phoneClean = str(phone, 40).replace(/[^\d+]/g, "");
+    const phoneDigits = phoneClean.replace(/\D/g, "");
+    const emailClean = str(email, 200).toLowerCase();
+    const genderLabel = ({ f: "Female", m: "Male" } as Record<string, string>)[String(gender)] || "";
+
+    const errors: Record<string, string> = {};
+    if (fullName.length < 2) errors.name = "Please enter your name.";
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) errors.phone = "Please enter a valid WhatsApp number.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailClean)) errors.email = "Please enter a valid email.";
+    if (!genderLabel) errors.gender = "Please choose one.";
+    if (!isPassportGoal(goal)) errors.goal = "Please choose a goal.";
+    if (Object.keys(errors).length) {
+      return res.status(400).json({ success: false, error: "Please check your details.", fields: errors });
+    }
+
+    const g = goal as PassportGoal;
+    const panel = panelForGoal(g);
+    const persona = PASSPORT_GOALS[g].persona;
+    const isTest = test === true;
+    const now = new Date();
+
+    const fields: Record<string, string> = {
+      "Passport Code": "",
+      "Quiz Goal": g.charAt(0).toUpperCase() + g.slice(1),
+      "Quiz Persona": persona,
+      [QUIZ_FIELDS.suggested]: panel.name,
+      "Recommended Panel": `${panel.name} ${panel.size}`,
+      "Station": PASSPORT_STATIONS[String(station)] || "",
+      "Gender": genderLabel,
+      "Offer": `AED ${PASSPORT_OFFER.toLocaleString("en-US")} off ${panel.name}, plus a free REX MINI`,
+      "Offer Valid Until": PASSPORT_VALID_UNTIL_LABEL,
+      "Quiz Status": "Completed",
+      "Quiz Completed At": now.toISOString(),
+      ...(str(page, 500) ? { [QUIZ_FIELDS.page]: str(page, 500) } : {}),
+      ...(isTest ? { "Test Submission": "Yes (staging)" } : {}),
+    };
+
+    // A retake by the same person keeps their code (unless they've already used it).
+    const previous = await prisma.lead.findMany({
+      where: { source: PASSPORT_SOURCE, OR: [{ email: emailClean }, { phone: phoneClean }] },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+    let code = "";
+    let leadId = "";
+    for (const p of previous) {
+      const c = String((p.dynamicFields as any)?.["Passport Code"] || "");
+      if (c && !(await passportCodeUsed(c)) && (await prisma.coupon.findUnique({ where: { code: c } }))) {
+        code = c;
+        leadId = p.id;
+        break;
+      }
+    }
+
+    const extra = { ...(await ipFields(req)), ...trackingFields(req, utmCampaign) };
+    let lead;
+    if (code) {
+      fields["Passport Code"] = code;
+      const prev = previous.find((p) => p.id === leadId)!;
+      const prevFields = (prev.dynamicFields && typeof prev.dynamicFields === "object" ? prev.dynamicFields : {}) as Record<string, unknown>;
+      [, lead] = await prisma.$transaction([
+        prisma.coupon.update({
+          where: { code },
+          data: {
+            applicableProducts: [panel.slug],
+            description: passportCouponDescription(panel.name),
+            isActive: true,
+          },
+        }),
+        prisma.lead.update({
+          where: { id: leadId },
+          data: {
+            name: fullName,
+            phone: phoneClean,
+            email: emailClean,
+            dynamicFields: { ...prevFields, ...extra, ...fields, "Quiz Retakes": String(Number(prevFields["Quiz Retakes"] || 0) + 1) },
+          },
+        }),
+      ]);
+    } else {
+      code = await newPassportCode();
+      fields["Passport Code"] = code;
+      [, lead] = await prisma.$transaction([
+        prisma.coupon.create({
+          data: {
+            code,
+            discount: PASSPORT_OFFER,
+            type: "FIXED",
+            description: passportCouponDescription(panel.name),
+            expiry: PASSPORT_VALID_UNTIL,
+            minPurchase: 0,
+            applicableProducts: [panel.slug],
+          },
+        }),
+        prisma.lead.create({
+          data: {
+            name: fullName,
+            phone: phoneClean,
+            email: emailClean,
+            source: PASSPORT_SOURCE,
+            status: "NEW",
+            dynamicFields: { ...extra, ...fields },
+          },
+        }),
+      ]);
+
+      // Notify the team only for a new person, not for a retake.
+      try {
+        await sendLeadNotificationEmail(lead);
+      } catch (err) {
+        console.error("Failed to send lead notification email for passport lead:", err);
+      }
+      await sendLeadNotificationWhatsapp(lead);
+      if (!isTest) {
+        const m = meta && typeof meta === "object" ? meta : {};
+        await sendWebsiteLead(req, lead, { eventId: m.eventId, fbp: m.fbp, fbc: m.fbc, page: m.page || str(page, 500) });
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        code,
+        leadId: lead.id,
+        panel: { slug: panel.slug, name: panel.name, size: panel.size },
+        persona,
+        offer: PASSPORT_OFFER,
+        validUntil: PASSPORT_VALID_UNTIL.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Error creating passport lead:", error);
+    res.status(500).json({ success: false, error: "We couldn't save your passport. Please try again." });
   }
 });
 

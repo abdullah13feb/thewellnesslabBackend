@@ -1,6 +1,7 @@
 import { Router } from "express";
 import prisma from "../lib/prisma.js";
 import { requireAuthOrApiKey, requireAdminOrApiKey } from "../middleware/auth.js";
+import { isPassportCode, passportCodeUsed } from "../lib/passport.js";
 
 const router = Router();
 
@@ -22,6 +23,10 @@ router.post("/validate", async (req, res) => {
 
         if (coupon.expiry && new Date(coupon.expiry) < new Date()) {
             return res.status(400).json({ error: "Coupon has expired" });
+        }
+
+        if (isPassportCode(coupon.code) && (await passportCodeUsed(coupon.code))) {
+            return res.status(400).json({ error: "This passport code has already been used." });
         }
 
         const parsedSubtotal = Number(subtotal) || 0;

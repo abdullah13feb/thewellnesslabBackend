@@ -4,6 +4,7 @@
 // (EMAIL_ASSETS_URL).
 
 import { esc, money, orderRef } from "./alertEmails.js";
+import { isPassportCode } from "./passport.js";
 
 const EMAIL_ASSETS_URL = (
   process.env.EMAIL_ASSETS_URL || "https://thewellnesslab-public-assets.s3.ap-south-1.amazonaws.com/email-assets"
@@ -171,7 +172,8 @@ export function orderConfirmationHtml(order: any): string {
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #EEE9E3;font-size:12px;line-height:18px;color:#8A857E;">
               <tr><td style="padding:10px 0 1px 0;">Subtotal</td><td align="right" style="padding:10px 0 1px 0;color:#1C1C1E;">AED ${money(subtotal)}</td></tr>
               <tr><td style="padding:1px 0;">Delivery</td><td align="right" style="padding:1px 0;${shipping > 0 ? "color:#1C1C1E;" : "color:#1A7F43;font-weight:600;"}">${shipping > 0 ? `AED ${money(shipping)}` : "Free"}</td></tr>${discount > 0 ? `
-              <tr><td style="padding:1px 0;">Discount${couponCode ? ` (${esc(couponCode)})` : ""}</td><td align="right" style="padding:1px 0;color:#1A7F43;font-weight:600;">&minus;AED ${money(discount)}</td></tr>` : ""}
+              <tr><td style="padding:1px 0;">Discount${couponCode ? ` (${esc(couponCode)})` : ""}</td><td align="right" style="padding:1px 0;color:#1A7F43;font-weight:600;">&minus;AED ${money(discount)}</td></tr>` : ""}${isPassportCode(couponCode) ? `
+              <tr><td style="padding:1px 0;">Free REX MINI (Recovery Passport)</td><td align="right" style="padding:1px 0;color:#1A7F43;font-weight:600;">Free</td></tr>` : ""}
               <tr><td style="padding:1px 0 10px 0;">VAT 5% (included)</td><td align="right" style="padding:1px 0 10px 0;color:#1C1C1E;">AED ${money(vat)}</td></tr>
               <tr>
                 <td style="padding:10px 0 0 0;border-top:1px solid #1C1C1E;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1C1C1E;">Total</td>
