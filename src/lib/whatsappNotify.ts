@@ -65,6 +65,11 @@ function buildButtons(config: WhatsappNotifyConfig, values: Record<string, strin
         ...(config.whatsappLinkButton !== false ? [{ type: "url" as const, label: linkLabel, value: "{{link}}" }] : []),
       ];
 
+  return specsToButtons(specs, values);
+}
+
+// Button specs ({type, label, value}) -> GOWA interactive buttons. `value` may contain {{placeholders}}.
+export function specsToButtons(specs: NotifyButton[], values: Record<string, string>): InteractiveButton[] {
   const buttons: InteractiveButton[] = [];
   specs.forEach((spec, i) => {
     const label = String(spec?.label || "").trim();

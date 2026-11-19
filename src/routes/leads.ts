@@ -3,7 +3,9 @@ import prisma from "../lib/prisma.js";
 import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js";
 import { sendLeadNotificationEmail } from "../lib/email.js";
 import { sendLeadNotificationWhatsapp } from "../lib/whatsappNotify.js";
-import { sanitizeNotifyButtons } from "../lib/whatsappNotify.js";
+import { sanitizeNotifyButtons, specsToButtons } from "../lib/whatsappNotify.js";
+import { normalizeDeviceId, sendWhatsappInteractive, sendWhatsappMessage } from "../lib/whatsappGateway.js";
+import { phoneIntl } from "../lib/alertEmails.js";
 import { QUIZ_FIELDS, attachQuizPurchases, buildQuizFields } from "../lib/quizLead.js";
 import { ipFields } from "../lib/ipLocation.js";
 import { trackingFields } from "../lib/leadTracking.js";
@@ -456,6 +458,68 @@ router.get("/:id/messages", requireAuthOrApiKey, requireAdminOrApiKey, async (re
     res.json({ success: true, data: messages.reverse(), contact });
   } catch (error) {
     console.error("Error fetching lead messages:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
+
+// Send a WhatsApp follow-up to a lead from the Wellness Lab device. With buttons it goes as an interactive
+// message (tappable buttons); if that fails, or without buttons, as a normal text message. {{name}}, {{phone}},
+// {{email}} and {{city}} in the message or button values are filled from the lead. Logged in the chat history.
+router.post("/:id/send-message", requireAuthOrApiKey, requireAdminOrApiKey, async (req, res) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
+
+    const waPhone = (lead.dynamicFields as any)?.[WA_PHONE_KEY];
+    const to = phoneIntl(waPhone || lead.phone);
+    if (to.length < 8) return res.status(400).json({ success: false, error: "This lead has no valid phone number" });
+
+    const values: Record<string, string> = {
+      name: String(lead.name || "").trim(),
+      phone: `+${to}`,
+      email: String(lead.email || ""),
+      city: String(lead.city || ""),
+    };
+    const fill = (s: string) => s.replace(/{{\s*(\w+)\s*}}/g, (m, k) => (k in values ? values[k] : m));
+    const message = fill(String(req.body?.message || "")).trim();
+    if (!message) return res.status(400).json({ success: false, error: "Message is required" });
+    if (Buffer.byteLength(message, "utf8") > 4096) return res.status(400).json({ success: false, error: "Message is too long (max 4096 bytes)" });
+    const footer = String(req.body?.footer || "").trim() || undefined;
+    const buttons = specsToButtons(sanitizeNotifyButtons(req.body?.buttons) || [], values);
+
+    let sentAs: "interactive" | "text" = "text";
+    let result: { success: boolean; error?: string } = { success: false };
+    let interactiveError: string | undefined;
+    if (buttons.length) {
+      result = await sendWhatsappInteractive(to, message, buttons, undefined, footer);
+      if (result.success) sentAs = "interactive";
+      else interactiveError = result.error;
+    }
+    if (!result.success) result = await sendWhatsappMessage("default", to, footer ? `${message}\n\n${footer}` : message);
+
+    const shown = sentAs === "interactive" ? `${message}${footer ? `\n\n${footer}` : ""}\n\n${buttons.map((b) => `[${b.params.display_text}]`).join(" ")}` : message;
+    const log = await prisma.wellnessLabMessageLog.create({
+      data: {
+        timestamp: new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Dubai", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }),
+        phoneNumber: waPhone ? String(waPhone) : to,
+        customerName: values.name || "WhatsApp Customer",
+        direction: "Outgoing",
+        messageContent: shown,
+        status: result.success ? "Sent" : "Failed",
+        deviceId: normalizeDeviceId(),
+      },
+    });
+
+    if (!result.success) {
+      return res.status(502).json({ success: false, error: `WhatsApp send failed: ${result.error || interactiveError || "unknown error"}` });
+    }
+    await prisma.lead.update({ where: { id: lead.id }, data: { whatsappSent: true, whatsappSentAt: new Date() } });
+    res.json({
+      success: true,
+      data: { sentAs, to, logId: log.id, ...(interactiveError ? { note: "Buttons could not be sent, so it went as a normal text message." } : {}) },
+    });
+  } catch (error) {
+    console.error("Error sending lead message:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 });
