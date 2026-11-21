@@ -1,12 +1,6 @@
 import prisma from "./prisma.js";
-import {
-  sendWhatsappMessage,
-  sendWhatsappMediaMessage,
-  sendWhatsappBulk,
-  getBatchStatus,
-  cancelBatch,
-  normalizePhoneNumber
-} from "./whatsappGateway.js";
+import { getBatchStatus } from "./whatsappGateway.js";
+import { dispatchDueRecipients } from "./broadcastDispatch.js";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 
@@ -18,37 +12,19 @@ export function startWhatsappScheduler() {
 
   console.log("⏰ WhatsApp Broadcast Scheduler initialized.");
 
-  // Check every 15 seconds for scheduled promotions and active bulk statuses
+  // Every 15 seconds: send recipients that are due (each at its own sendAt time, same dispatcher as the
+  // Lambda broadcastTick), and poll progress of gateway bulk batches. A run that is still sending is not overlapped.
+  let running = false;
   schedulerInterval = setInterval(async () => {
+    if (running) return;
+    running = true;
     try {
-      const now = new Date();
-      
-      // 1. Process scheduled campaigns
-      const dueCampaigns = await prisma.whatsappCampaign.findMany({
-        where: {
-          status: "SCHEDULED",
-          scheduledAt: { lte: now },
-        },
-      });
-
-      for (const campaign of dueCampaigns) {
-        // Mark as SENDING immediately to prevent duplicate runs
-        await prisma.whatsappCampaign.update({
-          where: { id: campaign.id },
-          data: { status: "SENDING" },
-        });
-
-        console.log(`🚀 Starting campaign execution for: ${campaign.name} (${campaign.id})`);
-        
-        // Execute background dispatch without blocking the scheduler loop
-        void processCampaign(campaign.id);
-      }
-
-      // 2. Poll progress for active bulk campaigns
+      await dispatchDueRecipients({ budgetMs: 14000 });
       await pollActiveCampaigns();
-
     } catch (error) {
       console.error("❌ Error in WhatsApp Scheduler loop:", error);
+    } finally {
+      running = false;
     }
   }, 15000);
 }
@@ -138,172 +114,5 @@ async function pollActiveCampaigns() {
     }
   } catch (error) {
     console.error("❌ Error polling active campaigns:", error);
-  }
-}
-
-/**
- * Background worker that dispatches messages to campaign recipients via native bulk API
- */
-export async function processCampaign(campaignId: string) {
-  try {
-    const campaign = await prisma.whatsappCampaign.findUnique({
-      where: { id: campaignId },
-      include: {
-        template: true,
-        recipients: {
-          where: { status: "PENDING" },
-        },
-      },
-    });
-
-    if (!campaign) {
-      console.error(`Campaign not found: ${campaignId}`);
-      return;
-    }
-
-    if (campaign.recipients.length === 0) {
-      console.log(`No pending recipients for campaign: ${campaignId}`);
-      await prisma.whatsappCampaign.update({
-        where: { id: campaignId },
-        data: { status: "COMPLETED" },
-      });
-      return;
-    }
-
-    console.log(`🚀 Starting sequential WhatsApp campaign delivery for: ${campaign.name}. Total: ${campaign.recipients.length}`);
-
-    const hasMedia = campaign.template && campaign.template.type !== "TEXT" && campaign.template.mediaUrl;
-    const deviceId = (campaign as any).deviceId || "WellnessLab";
-    const delaySeconds = Number((campaign as any).delaySeconds ?? 5);
-    const batchSize = Number((campaign as any).batchSize ?? 10);
-    const batchDelaySeconds = Number((campaign as any).batchDelaySeconds ?? 30);
-    
-    let successCount = 0;
-    let failCount = 0;
-    let processedInCurrentBatch = 0;
-
-    for (let i = 0; i < campaign.recipients.length; i++) {
-      const recipient = campaign.recipients[i];
-
-      // 1. Check if campaign has been CANCELLED by the user
-      const checkCampaign = await prisma.whatsappCampaign.findUnique({
-        where: { id: campaignId },
-        select: { status: true }
-      });
-
-      if (checkCampaign?.status === "CANCELLED") {
-        console.log(`🛑 Campaign ${campaignId} was cancelled by administrator. Halting sequential delivery.`);
-        // Mark all remaining pending recipients as FAILED
-        await prisma.whatsappCampaignRecipient.updateMany({
-          where: { campaignId, status: "PENDING" },
-          data: { status: "FAILED", error: "Campaign was cancelled by administrator" }
-        });
-        return;
-      }
-
-      // 2. Compile message body with variable substitutions
-      let messageText = campaign.customBody || campaign.template?.body || "";
-      const variablesMap = (recipient.variables as Record<string, string>) || {};
-      
-      if (recipient.name && !variablesMap["name"]) {
-        variablesMap["name"] = recipient.name;
-      }
-      if (recipient.phone && !variablesMap["phone"]) {
-        variablesMap["phone"] = recipient.phone;
-      }
-
-      for (const [key, value] of Object.entries(variablesMap)) {
-        const placeholderRegex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi");
-        messageText = messageText.replace(placeholderRegex, value || "");
-      }
-
-      // 3. Dispatch the message via GOWA API
-      let sendResult: { success: boolean; error?: string } = { success: false };
-      try {
-        if (hasMedia) {
-          sendResult = await sendWhatsappMediaMessage(
-            campaign.sessionId,
-            recipient.phone,
-            messageText,
-            campaign.template!.mediaUrl!,
-            campaign.template!.type,
-            deviceId
-          );
-        } else {
-          sendResult = await sendWhatsappMessage(
-            campaign.sessionId,
-            recipient.phone,
-            messageText,
-            deviceId
-          );
-        }
-      } catch (sendErr: any) {
-        console.error(`Error sending to ${recipient.phone}:`, sendErr);
-        sendResult = { success: false, error: sendErr.message };
-      }
-
-      // 4. Update Recipient and Campaign status live in the DB
-      if (sendResult.success) {
-        successCount++;
-        await prisma.whatsappCampaignRecipient.update({
-          where: { id: recipient.id },
-          data: { status: "SENT", sentAt: new Date() }
-        });
-      } else {
-        failCount++;
-        await prisma.whatsappCampaignRecipient.update({
-          where: { id: recipient.id },
-          data: { status: "FAILED", error: sendResult.error || "GOWA Gateway rejected message. Check session connection state." }
-        });
-      }
-
-      await prisma.whatsappCampaign.update({
-        where: { id: campaignId },
-        data: {
-          successCount,
-          failCount,
-        }
-      });
-
-      console.log(`✉️ Delivered to ${recipient.phone}: ${sendResult.success ? "✅ SUCCESS" : "❌ FAILED"}. Progress: ${successCount + failCount}/${campaign.recipients.length}`);
-
-      // 5. Configurable Delay & Batch Pause Interval
-      processedInCurrentBatch++;
-      if (i < campaign.recipients.length - 1) {
-        const isBatchBoundary = batchSize > 0 && processedInCurrentBatch >= batchSize;
-        if (isBatchBoundary) {
-          console.log(`⏸️ [Batch Interval Pause] Reached batch size limit (${batchSize} msgs). Pausing ${batchDelaySeconds}s before next batch...`);
-          processedInCurrentBatch = 0;
-          await new Promise(resolve => setTimeout(resolve, Math.max(1, batchDelaySeconds) * 1000));
-        } else if (delaySeconds > 0) {
-          console.log(`⏳ Delaying ${delaySeconds}s before sending to next recipient...`);
-          await new Promise(resolve => setTimeout(resolve, Math.max(1, delaySeconds) * 1000));
-        }
-      }
-    }
-
-    // 6. Complete campaign in DB
-    await prisma.whatsappCampaign.update({
-      where: { id: campaignId },
-      data: { status: "COMPLETED" }
-    });
-
-    console.log(`✅ Campaign ${campaignId} completed. Successful: ${successCount}, Failed: ${failCount}`);
-
-  } catch (error: any) {
-    console.error(`❌ Global error in processCampaign for ${campaignId}:`, error);
-    
-    await prisma.whatsappCampaign.update({
-      where: { id: campaignId },
-      data: { status: "FAILED" },
-    });
-
-    await prisma.whatsappCampaignRecipient.updateMany({
-      where: { campaignId, status: "PENDING" },
-      data: {
-        status: "FAILED",
-        error: error.message || "Failed to execute sequential campaign runner",
-      },
-    });
   }
 }

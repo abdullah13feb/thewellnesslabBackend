@@ -131,3 +131,16 @@ functions:
           path: '/{proxy+}'
           method: ANY
           cors: true
+
+  # Scheduled WhatsApp broadcasts. Lambda has no always-on process for a setInterval scheduler, so an
+  # EventBridge rule invokes this every minute; each run sends the messages due in the next ~50s at their
+  # exact per-recipient times (src/lib/broadcastDispatch.ts). No retries: a missed tick is picked up by the next one.
+  broadcastTick:
+    handler: src/broadcastTick.handler
+    timeout: 60
+    maximumRetryAttempts: 0
+    maximumEventAge: 60
+    events:
+      - schedule:
+          rate: rate(1 minute)
+          enabled: true

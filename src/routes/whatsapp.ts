@@ -10,6 +10,8 @@ import {
   normalizePhoneNumber,
   cancelBatch
 } from "../lib/whatsappGateway.js";
+import { MIN_GAP_MS, spacedSendTimes } from "../lib/broadcastDispatch.js";
+import { WA_PHONE_KEY } from "../lib/whatsappLead.js";
 
 const router = Router();
 
@@ -203,7 +205,7 @@ router.get("/campaigns/:id", async (req, res) => {
       include: {
         template: true,
         recipients: {
-          orderBy: { phone: "asc" }
+          orderBy: [{ sendAt: "asc" }, { phone: "asc" }]
         }
       },
     });
@@ -218,70 +220,105 @@ router.get("/campaigns/:id", async (req, res) => {
   }
 });
 
-// Create and trigger campaign
+// Create a campaign. Nothing is sent here: the dispatcher (Lambda broadcastTick every minute, or the
+// server's scheduler loop) sends each recipient at its sendAt time.
+// recipients: [{ phone?, leadId?, name?, variables?, sendAt? }]
+//  - leadId: phone and name are taken from the CRM lead (its WhatsApp number first).
+//  - sendAt: ISO time for that message. Times must be in order and at least MIN_GAP_MS apart. Recipients
+//    without one are spaced from scheduledAt (or now) by delaySeconds / batchSize / batchDelaySeconds.
 router.post("/campaigns", async (req, res) => {
-  const { name, templateId, customBody, scheduledAt, recipients, sessionId, deviceId, delaySeconds, batchSize, batchDelaySeconds } = req.body;
-  
+  const { name, templateId, customBody, scheduledAt, recipients, sessionId, deviceId, delaySeconds, batchSize, batchDelaySeconds, source, timing } = req.body;
+
   if (!name || (!templateId && !customBody)) {
     return res.status(400).json({ success: false, error: "Campaign name and message content (template or custom text) are required" });
   }
-
-  if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+  if (!Array.isArray(recipients) || recipients.length === 0) {
     return res.status(400).json({ success: false, error: "A list of recipients is required" });
+  }
+  if (recipients.length > 5000) {
+    return res.status(400).json({ success: false, error: "At most 5000 recipients per broadcast" });
   }
 
   try {
-    const isImmediate = !scheduledAt;
-    const scheduleDate = scheduledAt ? new Date(scheduledAt) : new Date();
-    
-    // Save campaign in DB
+    if (templateId && !(await prisma.whatsappTemplate.findUnique({ where: { id: String(templateId) }, select: { id: true } }))) {
+      return res.status(400).json({ success: false, error: "Template not found" });
+    }
+
+    // Resolve lead recipients to their phone and name.
+    const leadIds = [...new Set(recipients.map((r: any) => r?.leadId).filter(Boolean).map(String))];
+    const leads = leadIds.length
+      ? await prisma.lead.findMany({ where: { id: { in: leadIds } }, select: { id: true, name: true, phone: true, dynamicFields: true } })
+      : [];
+    const leadById = new Map(leads.map((l) => [l.id, l]));
+
+    const rows: { phone: string; name: string | null; variables: any; leadId: string | null; sendAt: Date | null }[] = [];
+    const skipped: string[] = [];
+    const seen = new Set<string>();
+    for (const r of recipients) {
+      const lead = r?.leadId ? leadById.get(String(r.leadId)) : undefined;
+      if (r?.leadId && !lead) { skipped.push(`lead ${r.leadId} not found`); continue; }
+      const raw = lead ? (lead.dynamicFields as any)?.[WA_PHONE_KEY] || lead.phone : r?.phone;
+      const phone = raw ? normalizePhoneNumber(String(raw), false) : "";
+      if (phone.length < 8) { skipped.push(`${lead?.name || r?.name || "recipient"}: no valid phone`); continue; }
+      if (seen.has(phone)) { skipped.push(`+${phone}: duplicate`); continue; }
+      seen.add(phone);
+      let sendAt: Date | null = null;
+      if (r?.sendAt) {
+        sendAt = new Date(r.sendAt);
+        if (isNaN(sendAt.getTime())) return res.status(400).json({ success: false, error: `Invalid sendAt for +${phone}` });
+      }
+      rows.push({ phone, name: (r?.name || lead?.name || null) && String(r?.name || lead?.name).trim(), variables: r?.variables || {}, leadId: lead?.id || null, sendAt });
+    }
+    if (!rows.length) {
+      return res.status(400).json({ success: false, error: `No valid recipients (${skipped.slice(0, 3).join("; ")})` });
+    }
+
+    // Times: given ones must be in order and spaced out; missing ones are spaced from the start time.
+    const given = rows.filter((r) => r.sendAt);
+    if (given.length && given.length !== rows.length) {
+      return res.status(400).json({ success: false, error: "Give sendAt for every recipient or for none" });
+    }
+    const now = Date.now();
+    if (given.length) {
+      for (let i = 0; i < rows.length; i++) {
+        const t = rows[i].sendAt!.getTime();
+        if (t < now - 10 * 60 * 1000) return res.status(400).json({ success: false, error: "Send times are in the past. Rebuild the schedule and try again." });
+        if (i > 0 && t - rows[i - 1].sendAt!.getTime() < MIN_GAP_MS) {
+          return res.status(400).json({ success: false, error: `Messages must be in time order and at least ${MIN_GAP_MS / 1000}s apart (recipient ${i + 1})` });
+        }
+      }
+    } else {
+      const start = scheduledAt ? new Date(scheduledAt) : new Date();
+      if (isNaN(start.getTime())) return res.status(400).json({ success: false, error: "Invalid scheduledAt" });
+      const times = spacedSendTimes(rows.length, new Date(Math.max(start.getTime(), now)), Number(delaySeconds ?? 5), Number(batchSize ?? 10), Number(batchDelaySeconds ?? 30));
+      rows.forEach((r, i) => (r.sendAt = times[i]));
+    }
+
     const campaign = await prisma.whatsappCampaign.create({
       data: {
-        name,
+        name: String(name).slice(0, 200),
         sessionId: sessionId || "default",
         deviceId: deviceId || "WellnessLab",
         templateId: templateId || null,
         customBody: customBody || null,
-        status: isImmediate ? "SENDING" : "SCHEDULED",
-        scheduledAt: scheduleDate,
-        totalCount: recipients.length,
+        status: "SCHEDULED",
+        scheduledAt: rows[0].sendAt,
+        totalCount: rows.length,
         delaySeconds: delaySeconds ? Number(delaySeconds) : 5.0,
         batchSize: batchSize ? Number(batchSize) : 10,
         batchDelaySeconds: batchDelaySeconds ? Number(batchDelaySeconds) : 30.0,
+        source: source === "marketing" ? "marketing" : "crm",
+        timing: timing && typeof timing === "object" ? timing : undefined,
         recipients: {
-          create: recipients.map((r: any) => ({
-            phone: normalizePhoneNumber(r.phone, false),
-            name: r.name || null,
-            variables: r.variables || {},
-            status: "PENDING",
-          })),
+          create: rows.map((r) => ({ phone: r.phone, name: r.name, variables: r.variables, leadId: r.leadId, sendAt: r.sendAt, status: "PENDING" })),
         },
       },
     });
 
-    // If it's an immediate broadcast, trigger processing asynchronously right now
-    if (isImmediate) {
-      // Dynamic import of scheduler to prevent circular dependency
-      const { startWhatsappScheduler } = await import("../lib/whatsappScheduler.js");
-      // Trigger background campaign runner
-      const schedulerModule = await import("../lib/whatsappScheduler.js");
-      // We will trigger the specific background campaign processor
-      // Use internal function exposure if accessible or let the loop pick it up immediately
-      // By setting the status to "SENDING" and letting our processCampaign function execute,
-      // we can trigger the function:
-      const processCampaignRef = (schedulerModule as any).processCampaign;
-      if (typeof processCampaignRef === "function") {
-        void processCampaignRef(campaign.id);
-      } else {
-        // Fallback: If not exported, set scheduled time 5 seconds ago, the loop will grab it in <= 15s.
-        await prisma.whatsappCampaign.update({
-          where: { id: campaign.id },
-          data: { status: "SCHEDULED", scheduledAt: new Date(Date.now() - 5000) }
-        });
-      }
-    }
-
-    res.status(201).json({ success: true, data: campaign });
+    res.status(201).json({
+      success: true,
+      data: { ...campaign, firstSendAt: rows[0].sendAt, lastSendAt: rows[rows.length - 1].sendAt, skipped },
+    });
   } catch (error: any) {
     console.error("Error creating campaign:", error);
     res.status(500).json({ success: false, error: error.message });

@@ -276,6 +276,8 @@ model WhatsappCampaign {
   delaySeconds       Float                       @default(5.0)  // Configurable delay in seconds between individual messages
   batchSize          Int                         @default(10)   // Configurable batch size (number of messages per batch)
   batchDelaySeconds  Float                       @default(30.0) // Configurable batch pause delay in seconds after each batch
+  source             String                      @default("crm") // "crm" (admin portal) | "marketing" (Marketing OS)
+  timing             Json?                       // pacing chosen when it was scheduled (gaps, pauses, sending hours, daily cap)
   recipients         WhatsappCampaignRecipient[]
   createdAt          DateTime                    @default(now())
   updatedAt          DateTime                    @updatedAt
@@ -288,9 +290,15 @@ model WhatsappCampaignRecipient {
   phone         String
   name          String?
   variables     Json?            // custom variables from CSV
-  status        String           @default("PENDING") // PENDING, SENT, FAILED
+  status        String           @default("PENDING") // PENDING, SENDING (claimed by the dispatcher), SENT, FAILED
   error         String?
   sentAt        DateTime?
+  sendAt        DateTime?        // when this message goes out; the dispatcher sends it at (or just after) this time
+  attemptedAt   DateTime?        // when the dispatcher claimed it
+  leadId        String?          // CRM lead it was picked from, if any
+
+  @@index([status, sendAt])
+  @@index([campaignId])
 }
 
 model EmailSenderAccount {
