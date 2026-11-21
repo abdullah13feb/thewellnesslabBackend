@@ -254,6 +254,8 @@ model WhatsappTemplate {
   variables    String[]           // e.g., ["name"]
   type         String             @default("TEXT") // TEXT, IMAGE, VIDEO, DOCUMENT
   mediaUrl     String?            // optional attachment URL
+  buttons      Json?              // interactive buttons: [{ type: reply|url|call|copy, label, value }] (text templates only)
+  footer       String?            // small grey line under an interactive message
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   campaigns    WhatsappCampaign[]
@@ -268,6 +270,8 @@ model WhatsappCampaign {
   templateId         String?
   template           WhatsappTemplate?           @relation(fields: [templateId], references: [id], onDelete: SetNull)
   customBody         String?                     // fallback message template
+  buttons            Json?                       // interactive buttons, copied from the template or set for this campaign
+  footer             String?                     // footer line of an interactive message
   status             String                      @default("DRAFT") // DRAFT, SCHEDULED, SENDING, COMPLETED, FAILED, CANCELLED
   scheduledAt        DateTime?
   totalCount         Int                         @default(0)

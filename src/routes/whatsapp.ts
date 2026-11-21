@@ -1,5 +1,6 @@
 import { Router } from "express";
 import prisma from "../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 import { requireAdminOrApiKey, requireAuthOrApiKey } from "../middleware/auth.js";
 import {
   getSessionStatus,
@@ -12,6 +13,7 @@ import {
 } from "../lib/whatsappGateway.js";
 import { MIN_GAP_MS, spacedSendTimes } from "../lib/broadcastDispatch.js";
 import { WA_PHONE_KEY } from "../lib/whatsappLead.js";
+import { sanitizeNotifyButtons } from "../lib/whatsappNotify.js";
 
 const router = Router();
 
@@ -122,6 +124,8 @@ router.post("/templates", async (req, res) => {
   if (!name || !body) {
     return res.status(400).json({ success: false, error: "Name and message body are required" });
   }
+  const extra = interactiveFields(req.body, type);
+  if ("error" in extra) return res.status(400).json({ success: false, error: extra.error });
 
   try {
     const template = await prisma.whatsappTemplate.create({
@@ -131,6 +135,7 @@ router.post("/templates", async (req, res) => {
         variables: variables || [],
         type: type || "TEXT",
         mediaUrl: mediaUrl || null,
+        ...templateButtonData(extra),
       },
     });
     res.status(201).json({ success: true, data: template });
@@ -143,6 +148,8 @@ router.post("/templates", async (req, res) => {
 router.put("/templates/:id", async (req, res) => {
   const { id } = req.params;
   const { name, body, variables, type, mediaUrl } = req.body;
+  const extra = interactiveFields(req.body, type);
+  if ("error" in extra) return res.status(400).json({ success: false, error: extra.error });
 
   try {
     const template = await prisma.whatsappTemplate.update({
@@ -153,6 +160,7 @@ router.put("/templates/:id", async (req, res) => {
         variables: variables || [],
         type: type || "TEXT",
         mediaUrl: mediaUrl || null,
+        ...templateButtonData(extra),
       },
     });
     res.json({ success: true, data: template });
@@ -228,6 +236,8 @@ router.get("/campaigns/:id", async (req, res) => {
 //    without one are spaced from scheduledAt (or now) by delaySeconds / batchSize / batchDelaySeconds.
 router.post("/campaigns", async (req, res) => {
   const { name, templateId, customBody, scheduledAt, recipients, sessionId, deviceId, delaySeconds, batchSize, batchDelaySeconds, source, timing } = req.body;
+  const extra = interactiveFields(req.body);
+  if ("error" in extra) return res.status(400).json({ success: false, error: extra.error });
 
   if (!name || (!templateId && !customBody)) {
     return res.status(400).json({ success: false, error: "Campaign name and message content (template or custom text) are required" });
@@ -240,8 +250,17 @@ router.post("/campaigns", async (req, res) => {
   }
 
   try {
-    if (templateId && !(await prisma.whatsappTemplate.findUnique({ where: { id: String(templateId) }, select: { id: true } }))) {
+    const template = templateId ? await prisma.whatsappTemplate.findUnique({ where: { id: String(templateId) } }) : null;
+    if (templateId && !template) {
       return res.status(400).json({ success: false, error: "Template not found" });
+    }
+    // Buttons: the ones sent with the campaign, else the template's (copied, so editing the template later
+    // does not change a scheduled broadcast). A media template cannot also have buttons.
+    const fromTemplate = Array.isArray(template?.buttons) && (template!.buttons as any[]).length ? (template!.buttons as ButtonSpec[]) : null;
+    const buttons = extra.buttons !== undefined ? extra.buttons : fromTemplate;
+    const footer = extra.buttons !== undefined ? extra.footer ?? null : buttons ? template?.footer ?? null : null;
+    if (buttons && template && template.type !== "TEXT" && template.mediaUrl) {
+      return res.status(400).json({ success: false, error: "A template with an image, video or document cannot also have buttons" });
     }
 
     // Resolve lead recipients to their phone and name.
@@ -301,6 +320,7 @@ router.post("/campaigns", async (req, res) => {
         deviceId: deviceId || "WellnessLab",
         templateId: templateId || null,
         customBody: customBody || null,
+        ...(buttons ? { buttons, footer } : {}),
         status: "SCHEDULED",
         scheduledAt: rows[0].sendAt,
         totalCount: rows.length,
@@ -380,5 +400,21 @@ router.delete("/campaigns/:id", async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Interactive message fields from a request: buttons [{ type: reply|url|call|copy, label, value }] (max 3,
+// values may use {{name}} {{phone}} {{email}} {{city}} {{passport}}) and an optional footer.
+// Absent buttons -> nothing to set; [] -> clears them.
+type ButtonSpec = { type: string; label: string; value: string };
+function interactiveFields(body: any, type?: string): { buttons?: ButtonSpec[] | null; footer?: string | null } | { error: string } {
+  if (body?.buttons === undefined) return {};
+  const buttons = sanitizeNotifyButtons(body.buttons) || [];
+  if (buttons.length > 3) return { error: "At most 3 buttons" };
+  if (buttons.length && type && type !== "TEXT") return { error: "Buttons work only on text templates (not with an image, video or document)" };
+  const footer = String(body?.footer || "").trim().slice(0, 200) || null;
+  return buttons.length ? { buttons, footer } : { buttons: null, footer: null };
+}
+// Prisma data for a template's buttons/footer (unchanged when the request did not send buttons).
+const templateButtonData = (x: { buttons?: ButtonSpec[] | null; footer?: string | null }) =>
+  x.buttons === undefined ? {} : { buttons: x.buttons ?? Prisma.DbNull, footer: x.footer ?? null };
 
 export default router;

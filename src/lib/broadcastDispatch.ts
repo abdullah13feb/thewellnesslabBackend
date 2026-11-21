@@ -6,7 +6,8 @@
 // Each recipient is claimed with a conditional update (PENDING -> SENDING) before it is sent, so two runners
 // can never send the same message twice.
 import prisma from "./prisma.js";
-import { normalizeDeviceId, sendWhatsappMediaMessage, sendWhatsappMessage } from "./whatsappGateway.js";
+import { normalizeDeviceId, sendWhatsappInteractive, sendWhatsappMediaMessage, sendWhatsappMessage } from "./whatsappGateway.js";
+import { specsToButtons, type NotifyButton } from "./whatsappNotify.js";
 import { WA_PHONE_KEY } from "./whatsappLead.js";
 
 const ACTIVE = ["SCHEDULED", "SENDING"];
@@ -91,20 +92,43 @@ async function sendOne(recipientId: string): Promise<"sent" | "failed" | "skippe
     await prisma.whatsappCampaign.updateMany({ where: { id: campaign.id, status: "SCHEDULED" }, data: { status: "SENDING" } });
   }
 
-  const vars: Record<string, string> = { ...((r.variables as Record<string, string>) || {}) };
-  if (r.name && !vars.name) vars.name = r.name;
-  if (r.phone && !vars.phone) vars.phone = r.phone;
-  const text = (campaign.customBody || campaign.template?.body || "").replace(/{{\s*(\w+)\s*}}/g, (m, k) =>
-    k in vars ? String(vars[k] ?? "") : k === "name" ? "" : m,
-  ).trim();
+  // Values for {{name}} {{phone}} {{email}} {{city}} {{passport}} in the message and in button values.
+  const lead = r.leadId
+    ? await prisma.lead.findUnique({ where: { id: r.leadId }, select: { id: true, name: true, email: true, city: true, dynamicFields: true } })
+    : null;
+  const df = (lead?.dynamicFields as Record<string, unknown>) || {};
+  const vars: Record<string, string> = {
+    name: String(r.name || lead?.name || "").trim(),
+    phone: `+${r.phone}`,
+    email: String(lead?.email || ""),
+    city: String(lead?.city || ""),
+    passport: String(df["Passport Code"] || ""),
+    ...((r.variables as Record<string, string>) || {}),
+  };
+  const fill = (s: string) => s.replace(/{{\s*(\w+)\s*}}/g, (m, k) => (k in vars ? String(vars[k] ?? "") : m));
+  const text = fill(campaign.customBody || campaign.template?.body || "").trim();
 
   const t = campaign.template;
   const hasMedia = !!(t && t.type !== "TEXT" && t.mediaUrl);
+  const specs = Array.isArray(campaign.buttons) ? (campaign.buttons as unknown as NotifyButton[]) : [];
+  // Buttons whose value is empty for this person (e.g. "Copy code" with no {{passport}}) are left out.
+  const buttons = !hasMedia && specs.length ? specsToButtons(specs, vars) : [];
+  const footer = campaign.footer ? fill(campaign.footer).trim() : "";
+
   let res: { success: boolean; error?: string };
+  let sentAs: "interactive" | "text" | "media" = hasMedia ? "media" : "text";
   try {
-    res = hasMedia
-      ? await sendWhatsappMediaMessage(campaign.sessionId, r.phone, text, t!.mediaUrl!, t!.type, campaign.deviceId)
-      : await sendWhatsappMessage(campaign.sessionId, r.phone, text, campaign.deviceId);
+    if (hasMedia) {
+      res = await sendWhatsappMediaMessage(campaign.sessionId, r.phone, text, t!.mediaUrl!, t!.type, campaign.deviceId);
+    } else {
+      res = { success: false };
+      if (buttons.length) {
+        res = await sendWhatsappInteractive(r.phone, text, buttons, campaign.deviceId, footer || undefined);
+        if (res.success) sentAs = "interactive";
+      }
+      // No buttons, or the gateway refused the interactive message: send it as a normal text.
+      if (!res.success) res = await sendWhatsappMessage(campaign.sessionId, r.phone, footer && buttons.length ? `${text}\n\n${footer}` : text, campaign.deviceId);
+    }
   } catch (e: any) {
     res = { success: false, error: e?.message || "send failed" };
   }
@@ -112,7 +136,7 @@ async function sendOne(recipientId: string): Promise<"sent" | "failed" | "skippe
   await prisma.whatsappCampaignRecipient.update({
     where: { id: r.id },
     data: res.success
-      ? { status: "SENT", sentAt: new Date(), error: null }
+      ? { status: "SENT", sentAt: new Date(), error: buttons.length && sentAs === "text" ? "Buttons could not be sent; went as a normal message" : null }
       : { status: "FAILED", error: res.error || "WhatsApp gateway rejected the message. Check the device connection." },
   });
   await prisma.whatsappCampaign.update({
@@ -120,23 +144,27 @@ async function sendOne(recipientId: string): Promise<"sent" | "failed" | "skippe
     data: res.success ? { successCount: { increment: 1 } } : { failCount: { increment: 1 } },
   });
 
-  await logToChat(r, campaign, text, res.success).catch((e) => console.error("Broadcast: chat log failed:", e?.message));
+  const shown = sentAs === "interactive"
+    ? `${text}${footer ? `\n\n${footer}` : ""}\n\n${buttons.map((b) => `[${b.params.display_text}]`).join(" ")}`
+    : text;
+  await logToChat(r, lead, campaign, shown, res.success).catch((e) => console.error("Broadcast: chat log failed:", e?.message));
   return res.success ? "sent" : "failed";
 }
 
 // Shows the broadcast message in the lead's WhatsApp history (Leads tab and CRM inbox).
-async function logToChat(r: { phone: string; name: string | null; leadId: string | null }, campaign: { name: string; deviceId: string }, text: string, ok: boolean) {
-  let phone = r.phone;
-  if (r.leadId) {
-    const lead = await prisma.lead.findUnique({ where: { id: r.leadId }, select: { dynamicFields: true } });
-    const wa = (lead?.dynamicFields as any)?.[WA_PHONE_KEY];
-    if (wa) phone = String(wa);
-    if (ok && lead) await prisma.lead.update({ where: { id: r.leadId }, data: { whatsappSent: true, whatsappSentAt: new Date() } });
-  }
+async function logToChat(
+  r: { phone: string; name: string | null },
+  lead: { id: string; dynamicFields: unknown } | null,
+  campaign: { name: string; deviceId: string },
+  text: string,
+  ok: boolean,
+) {
+  const wa = (lead?.dynamicFields as any)?.[WA_PHONE_KEY];
+  if (ok && lead) await prisma.lead.update({ where: { id: lead.id }, data: { whatsappSent: true, whatsappSentAt: new Date() } });
   await prisma.wellnessLabMessageLog.create({
     data: {
       timestamp: new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Dubai", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }),
-      phoneNumber: phone,
+      phoneNumber: wa ? String(wa) : r.phone,
       customerName: r.name || "WhatsApp Customer",
       direction: "Outgoing",
       messageContent: text,
